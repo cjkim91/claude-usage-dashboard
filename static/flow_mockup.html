@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<title>Harness Flow — Mockup v3</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--border:#30363d;
+        --text:#e6edf3;--muted:#7d8590;--accent:#58a6ff;--good:#3fb950;
+        --warn:#d29922;--danger:#f85149;--opus:#d2a8ff;--sonnet:#79c0ff;
+        --haiku:#7ee787;--personal:#f778ba;--work:#ffa657;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,"SF Pro Text",system-ui,sans-serif;
+       background:var(--bg);color:var(--text);font-size:13px;padding:20px;}
+
+  .note{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.3);
+        border-radius:6px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:var(--accent);}
+
+  /* Session header */
+  .sess{background:var(--panel);border:1px solid var(--border);border-radius:8px;
+        padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
+  .sess-title{font-size:15px;font-weight:600;margin-bottom:4px;}
+  .sess-meta{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;}
+  .badge{font-size:10px;padding:2px 7px;border-radius:4px;background:var(--panel2);border:1px solid var(--border);}
+  .badge.personal{background:rgba(247,120,186,.15);border-color:var(--personal);color:var(--personal);}
+  .badge.opus{background:rgba(210,168,255,.15);border-color:var(--opus);color:var(--opus);}
+  .badge.live{background:rgba(63,185,80,.15);border-color:var(--good);color:var(--good);}
+
+  /* Panel shell (used for flow + sidebar cards) */
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .panel-hdr{display:flex;justify-content:space-between;align-items:center;
+             padding:10px 14px;border-bottom:1px solid var(--border);}
+  .panel-hdr h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+                color:var(--muted);font-weight:500;}
+  .panel-body{padding:10px 14px;}
+
+  /* Collapse toggle button */
+  .col-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;
+           padding:2px 4px;border-radius:4px;line-height:1;}
+  .col-btn:hover{color:var(--text);background:var(--panel2);}
+
+  /* Legend */
+  .legend{display:flex;gap:10px;flex-wrap:wrap;}
+  .li{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);}
+  .ld{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;}
+  .ld.dia{border-radius:0;transform:rotate(45deg);width:7px;height:7px;}
+
+  /* Flow chart scroll */
+  #flow-scroll{overflow-x:auto;padding:10px 14px 8px;}
+  #flow-svg{display:block;}
+
+  /* Tooltip */
+  #tip{position:fixed;pointer-events:none;background:#1c2330;
+       border:1px solid var(--border);border-radius:6px;padding:7px 11px;
+       font-size:11px;color:var(--text);max-width:280px;line-height:1.6;
+       z-index:999;display:none;box-shadow:0 4px 16px rgba(0,0,0,.6);}
+  #tip .t-type{font-weight:700;font-size:10px;letter-spacing:.5px;}
+  #tip .t-lbl{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px;
+              display:block;margin-top:2px;word-break:break-all;}
+  #tip .t-tok{color:var(--good);font-size:10px;margin-top:4px;}
+
+  /* Layout */
+  .layout{display:grid;grid-template-columns:1fr 240px;gap:14px;align-items:start;}
+
+  /* ── Flow column ── */
+  .flow-col{display:flex;flex-direction:column;gap:2px;}
+  .flow-ctrl{display:flex;gap:6px;margin-bottom:6px;}
+  .flow-ctrl button{font-size:10px;padding:3px 8px;border-radius:4px;
+                    background:var(--panel2);border:1px solid var(--border);
+                    color:var(--muted);cursor:pointer;}
+  .flow-ctrl button:hover{border-color:var(--accent);color:var(--text);}
+
+  /* Turn */
+  .turn{display:flex;flex-direction:column;}
+  .turn-hdr{display:flex;gap:8px;align-items:flex-start;padding:8px 12px;
+            background:var(--panel);border:1px solid var(--border);
+            border-radius:8px 8px 0 0;border-bottom:none;cursor:pointer;user-select:none;}
+  .turn-hdr:hover{background:#1a2030;}
+  .turn-collapsed .turn-hdr{border-radius:8px;border-bottom:1px solid var(--border);}
+  .turn-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+            flex-shrink:0;margin-top:4px;}
+  .turn-text{font-size:12px;line-height:1.5;flex:1;}
+  .turn-time{font-size:10px;color:var(--muted);white-space:nowrap;margin-left:auto;}
+  .turn-arrow{font-size:11px;color:var(--muted);flex-shrink:0;margin-top:2px;transition:transform .15s;}
+  .turn-collapsed .turn-arrow{transform:rotate(-90deg);}
+
+  .turn-body{background:var(--panel2);border:1px solid var(--border);
+             border-radius:0 0 8px 8px;overflow:hidden;}
+  .turn-collapsed .turn-body{display:none;}
+
+  .resp-model{font-size:10px;color:var(--muted);padding:4px 12px;
+              border-bottom:1px solid var(--border);display:flex;gap:10px;}
+  .resp-model .tok{color:var(--text);font-weight:500;}
+
+  .turn-conn{width:2px;background:var(--border);height:6px;margin-left:19px;}
+
+  /* Tool rows */
+  .trow{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px;
+        border-left:3px solid transparent;}
+  .trow+.trow{border-top:1px solid rgba(48,54,61,.4);}
+  .tico{width:14px;text-align:center;flex-shrink:0;font-size:11px;}
+  .tname{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;min-width:46px;}
+  .tdetail{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+  .ttag{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--panel);
+        flex-shrink:0;color:var(--muted);}
+  .t-bash  {border-left-color:var(--work);}    .t-bash   .tname{color:var(--work);}
+  .t-read  {border-left-color:var(--accent);}  .t-read   .tname{color:var(--accent);}
+  .t-edit  {border-left-color:var(--opus);}    .t-edit   .tname{color:var(--opus);}
+  .t-write {border-left-color:var(--warn);}    .t-write  .tname{color:var(--warn);}
+  .t-skill {border-left-color:var(--good);}    .t-skill  .tname{color:var(--good);}
+
+  /* Agent block */
+  .ag-block{margin:4px 12px;border:1px dashed rgba(210,168,255,.35);border-radius:6px;overflow:hidden;}
+  .ag-hdr{display:flex;align-items:center;gap:8px;padding:5px 10px;
+          background:rgba(210,168,255,.06);font-size:11px;
+          border-bottom:1px dashed rgba(210,168,255,.2);}
+  .ag-hdr .atype{color:var(--opus);font-weight:600;}
+  .ag-hdr .adesc{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ag-inner .trow{padding-left:18px;}
+
+  .skill-ev{display:flex;align-items:center;gap:8px;padding:6px 12px;
+            background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.2);
+            border-radius:6px;font-size:12px;}
+
+  /* ── Sidebar ── */
+  .sidebar{display:flex;flex-direction:column;gap:10px;}
+  .sc-hdr{display:flex;justify-content:space-between;align-items:center;
+          padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .sc-hdr:hover{background:rgba(255,255,255,.02);}
+  .sc-hdr h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+             color:var(--muted);font-weight:500;}
+  .sc-body{padding:8px 12px;}
+  .sc-collapsed .sc-body{display:none;}
+  .sc-collapsed .sc-hdr{border-bottom:none;}
+  .ref-item{display:flex;justify-content:space-between;align-items:center;
+            padding:3px 0;font-size:11px;border-bottom:1px solid rgba(48,54,61,.5);}
+  .ref-item:last-child{border:none;}
+  .ref-path{color:var(--text);font-family:ui-monospace,monospace;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+  .ref-ops{display:flex;gap:3px;flex-shrink:0;margin-left:6px;}
+  .ref-op{font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600;}
+  .ref-op.r{background:rgba(88,166,255,.2);color:var(--accent);}
+  .ref-op.e{background:rgba(210,168,255,.2);color:var(--opus);}
+  .ref-op.w{background:rgba(210,153,34,.2);color:var(--warn);}
+  .ref-op.x{background:rgba(255,166,87,.2);color:var(--work);}
+  .ref-sec{font-size:10px;color:var(--muted);margin:6px 0 3px;
+           display:flex;align-items:center;gap:4px;}
+  .ref-sec::after{content:'';flex:1;height:1px;background:var(--border);}
+</style>
+</head>
+<body>
+
+<div class="note">🖼 디자인 목업 — 샘플 데이터. 병렬 에이전트 포함. 검토 후 실데이터로 연결합니다.</div>
+
+<!-- Session header -->
+<div class="sess">
+  <div>
+    <div class="sess-title">Build local Claude usage monitoring dashboard</div>
+    <div class="sess-meta">
+      <span style="font-family:monospace;color:var(--muted)">8e410b9e</span>
+      <span class="badge personal">personal</span>
+      <span class="badge opus">claude-opus-4-7</span>
+      <span class="badge live">● LIVE</span>
+      <span>~/side-projects/260429_claude_usage_dashboard</span>
+      <span>633 entries · 1.38B tokens</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOP: Harness Flow ── -->
+<div class="panel" style="margin-bottom:14px;" id="flow-panel">
+  <div class="panel-hdr">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <h4>🔀 Harness Flow <span style="font-weight:400;font-size:10px;">(hover → 상세 + 토큰 / 점 크기 = token weight)</span></h4>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div class="legend">
+        <span class="li"><span class="ld" style="background:#58a6ff"></span>user</span>
+        <span class="li"><span class="ld" style="background:#ffa657"></span>Bash</span>
+        <span class="li"><span class="ld" style="background:#79c0ff"></span>Read</span>
+        <span class="li"><span class="ld" style="background:#d2a8ff"></span>Edit</span>
+        <span class="li"><span class="ld" style="background:#d29922"></span>Write</span>
+        <span class="li"><span class="ld dia" style="background:#3fb950"></span>/skill</span>
+        <span class="li"><span class="ld dia" style="background:#d2a8ff"></span>Agent</span>
+      </div>
+      <button class="col-btn" onclick="togglePanel('flow-panel','flow-panel-body')">▾</button>
+    </div>
+  </div>
+  <div id="flow-panel-body">
+    <div id="flow-scroll"><svg id="flow-svg"></svg></div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tip">
+  <span class="t-type"></span>
+  <span class="t-lbl"></span>
+  <span class="t-tok"></span>
+</div>
+
+<!-- ── BOTTOM layout ── -->
+<div class="layout">
+
+  <!-- Flow detail -->
+  <div class="flow-col">
+    <div class="flow-ctrl">
+      <button onclick="setAllTurns(false)">▾ Expand all</button>
+      <button onclick="setAllTurns(true)">▸ Collapse all</button>
+    </div>
+
+    <!-- Turn 1 -->
+    <div class="turn" id="t1">
+      <div class="turn-hdr" onclick="toggleTurn('t1')">
+        <div class="turn-arrow">▾</div>
+        <div class="turn-dot"></div>
+        <div class="turn-text">클로드 사용량을 모니터링 할 수 있는 로컬 대시보드를 만들고 싶어.</div>
+        <div class="turn-time">02:42</div>
+      </div>
+      <div class="turn-body">
+        <div class="resp-model"><span>claude-opus-4-7</span><span class="tok">↓ 45.2K tokens</span></div>
+        <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">ls -la ~/.claude/ ~/.claude-personal/ 2>/dev/null</span><span class="ttag">~</span></div>
+        <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">ls ~/.claude-personal/sessions/ | head -5</span><span class="ttag">~/.claude-personal</span></div>
+        <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">~/.claude-personal/CLAUDE.md</span><span class="ttag" style="color:var(--personal)">memory</span></div>
+        <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">...b68ceb33.jsonl (구조 확인)</span><span class="ttag" style="color:var(--personal)">session</span></div>
+      </div>
+    </div>
+    <div class="turn-conn"></div>
+
+    <!-- Turn 2 -->
+    <div class="turn" id="t2">
+      <div class="turn-hdr" onclick="toggleTurn('t2')">
+        <div class="turn-arrow">▾</div>
+        <div class="turn-dot"></div>
+        <div class="turn-text">응 만들어줘. 초안 만들어 주면 검토할게</div>
+        <div class="turn-time">04:03</div>
+      </div>
+      <div class="turn-body">
+        <div class="resp-model"><span>claude-opus-4-7</span><span class="tok">↓ 212K tokens</span></div>
+        <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">mkdir -p .../260429_claude_usage_dashboard/static</span><span class="ttag" style="color:var(--work)">project</span></div>
+        <div class="trow t-write"><span class="tico">✏️</span><span class="tname">Write</span><span class="tdetail">core.py</span><span class="ttag" style="color:var(--work)">project</span></div>
+        <div class="trow t-write"><span class="tico">✏️</span><span class="tname">Write</span><span class="tdetail">app.py</span><span class="ttag" style="color:var(--work)">project</span></div>
+        <div class="trow t-write"><span class="tico">✏️</span><span class="tname">Write</span><span class="tdetail">static/index.html</span><span class="ttag" style="color:var(--work)">project</span></div>
+        <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">pip install fastapi uvicorn && python app.py</span></div>
+      </div>
+    </div>
+    <div class="turn-conn"></div>
+    <div class="skill-ev">
+      <span style="color:var(--good)">⚡</span>
+      <span style="color:var(--good);font-weight:600;font-family:monospace">/model</span>
+      <span style="color:var(--muted);font-size:11px">→ claude-sonnet-4-6 으로 전환</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--muted)">11:22</span>
+    </div>
+    <div class="turn-conn"></div>
+
+    <!-- Turn 3 — sequential agent -->
+    <div class="turn" id="t3">
+      <div class="turn-hdr" onclick="toggleTurn('t3')">
+        <div class="turn-arrow">▾</div>
+        <div class="turn-dot"></div>
+        <div class="turn-text">세부 토큰 보고싶음. 유사 사례 있는지 체크해봐</div>
+        <div class="turn-time">11:35</div>
+      </div>
+      <div class="turn-body">
+        <div class="resp-model"><span>claude-opus-4-7</span><span class="tok">↓ 38.1K tokens</span></div>
+        <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">core.py</span></div>
+        <div class="ag-block">
+          <div class="ag-hdr">
+            <span>🤖</span><span class="atype">Explore</span>
+            <span class="adesc">search prior art — Claude Code usage dashboards</span>
+            <span style="margin-left:auto;font-size:10px;color:var(--muted)">3.2K tok</span>
+          </div>
+          <div class="ag-inner">
+            <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">find ~/.claude-personal -name "*.jsonl" | head -20</span></div>
+            <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">sample.jsonl</span></div>
+            <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">python3 inspect_entries.py</span></div>
+          </div>
+        </div>
+        <div class="trow t-edit"><span class="tico">📝</span><span class="tname">Edit</span><span class="tdetail">core.py — aggregate_by_model()</span></div>
+        <div class="trow t-edit"><span class="tico">📝</span><span class="tname">Edit</span><span class="tdetail">static/index.html — renderBreakdown()</span></div>
+      </div>
+    </div>
+    <div class="turn-conn"></div>
+
+    <!-- Turn 4 — parallel agents demo -->
+    <div class="turn" id="t4">
+      <div class="turn-hdr" onclick="toggleTurn('t4')">
+        <div class="turn-arrow">▾</div>
+        <div class="turn-dot"></div>
+        <div class="turn-text">세션명 / 모델 드릴다운 / 스킬 드릴다운 추가해줘 <span style="background:rgba(210,168,255,.15);border:1px solid var(--opus);border-radius:4px;font-size:10px;padding:1px 6px;margin-left:4px;color:var(--opus)">🤖×2 parallel</span></div>
+        <div class="turn-time">14:08</div>
+      </div>
+      <div class="turn-body">
+        <div class="resp-model"><span>claude-sonnet-4-6</span><span class="tok">↓ 52.3K tokens</span></div>
+        <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">static/index.html</span></div>
+        <!-- Parallel agents -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 12px;">
+          <div class="ag-block" style="margin:0">
+            <div class="ag-hdr">
+              <span>🤖</span><span class="atype">Explore</span>
+              <span class="adesc" style="font-size:10px">cmux API scan</span>
+              <span style="margin-left:auto;font-size:10px;color:var(--muted)">2.1K</span>
+            </div>
+            <div class="ag-inner">
+              <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">cmux tree --all</span></div>
+              <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">cmux identify --surface …</span></div>
+            </div>
+          </div>
+          <div class="ag-block" style="margin:0">
+            <div class="ag-hdr">
+              <span>🤖</span><span class="atype">claude-code-guide</span>
+              <span class="adesc" style="font-size:10px">drilldown pattern</span>
+              <span style="margin-left:auto;font-size:10px;color:var(--muted)">1.8K</span>
+            </div>
+            <div class="ag-inner">
+              <div class="trow t-read"><span class="tico">📖</span><span class="tname">Read</span><span class="tdetail">Claude Code docs</span></div>
+              <div class="trow t-bash"><span class="tico">⚡</span><span class="tname">Bash</span><span class="tdetail">grep -r "openDrilldown" .</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="trow t-edit"><span class="tico">📝</span><span class="tname">Edit</span><span class="tdetail">core.py — _cmux_session_name()</span></div>
+        <div class="trow t-edit"><span class="tico">📝</span><span class="tname">Edit</span><span class="tdetail">static/index.html — openDrilldown()</span></div>
+        <div class="trow t-write"><span class="tico">✏️</span><span class="tname">Write</span><span class="tdetail">memory/feedback_model_choice.md</span><span class="ttag" style="color:var(--personal)">memory</span></div>
+        <div class="trow t-edit"><span class="tico">📝</span><span class="tname">Edit</span><span class="tdetail">memory/MEMORY.md</span><span class="ttag" style="color:var(--personal)">memory</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top:8px;text-align:center;font-size:11px;color:var(--muted);
+                padding:6px;border-top:1px solid var(--border);">
+      … 총 154 user turns · 266 assistant turns (일부만 표시)
+    </div>
+  </div>
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- References -->
+    <div class="panel" id="sc-refs">
+      <div class="sc-hdr" onclick="toggleSideSection('sc-refs')">
+        <h4>📂 References</h4>
+        <button class="col-btn">▾</button>
+      </div>
+      <div class="sc-body">
+        <div class="ref-sec">memory</div>
+        <div class="ref-item"><span class="ref-path">CLAUDE.md</span><div class="ref-ops"><span class="ref-op r">R×3</span></div></div>
+        <div class="ref-item"><span class="ref-path">memory/MEMORY.md</span><div class="ref-ops"><span class="ref-op r">R×2</span><span class="ref-op e">E×5</span></div></div>
+        <div class="ref-item"><span class="ref-path">memory/feedback_*.md</span><div class="ref-ops"><span class="ref-op w">W×2</span></div></div>
+        <div class="ref-item"><span class="ref-path">projects/…/b68ceb33.jsonl</span><div class="ref-ops"><span class="ref-op r">R×1</span></div></div>
+        <div class="ref-sec">project</div>
+        <div class="ref-item"><span class="ref-path">core.py</span><div class="ref-ops"><span class="ref-op r">R×6</span><span class="ref-op e">E×14</span></div></div>
+        <div class="ref-item"><span class="ref-path">static/index.html</span><div class="ref-ops"><span class="ref-op r">R×4</span><span class="ref-op e">E×18</span></div></div>
+        <div class="ref-item"><span class="ref-path">app.py</span><div class="ref-ops"><span class="ref-op r">R×2</span><span class="ref-op e">E×3</span></div></div>
+        <div class="ref-sec">session data</div>
+        <div class="ref-item"><span class="ref-path">~/.claude-personal/</span><div class="ref-ops"><span class="ref-op x">Bash×8</span></div></div>
+        <div class="ref-item"><span class="ref-path">~/.claude-work/</span><div class="ref-ops"><span class="ref-op x">Bash×4</span></div></div>
+      </div>
+    </div>
+
+    <!-- Subagents -->
+    <div class="panel" id="sc-subs">
+      <div class="sc-hdr" onclick="toggleSideSection('sc-subs')">
+        <h4>🤖 Subagents</h4>
+        <button class="col-btn">▾</button>
+      </div>
+      <div class="sc-body">
+        <div class="ref-item"><span class="ref-path" style="color:var(--opus)">Explore</span><span style="font-size:10px;color:var(--muted)">4회 · 5.3K tok</span></div>
+        <div class="ref-item"><span class="ref-path" style="color:var(--opus)">general-purpose</span><span style="font-size:10px;color:var(--muted)">1회 · 1.8K tok</span></div>
+        <div class="ref-item"><span class="ref-path" style="color:var(--opus)">claude-code-guide</span><span style="font-size:10px;color:var(--muted)">1회 · 1.8K tok</span></div>
+      </div>
+    </div>
+
+    <!-- Skills -->
+    <div class="panel" id="sc-skills">
+      <div class="sc-hdr" onclick="toggleSideSection('sc-skills')">
+        <h4>⚡ Skills / Slash</h4>
+        <button class="col-btn">▾</button>
+      </div>
+      <div class="sc-body">
+        <div class="ref-item"><span class="ref-path" style="color:var(--good)">/model</span><span style="font-size:10px;color:var(--muted)">2회</span></div>
+        <div class="ref-item"><span class="ref-path" style="color:var(--good)">/compact</span><span style="font-size:10px;color:var(--muted)">3회</span></div>
+        <div class="ref-item"><span class="ref-path" style="color:var(--good)">/ultrareview</span><span style="font-size:10px;color:var(--muted)">1회</span></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /layout -->
+
+<script>
+// ── Collapse helpers ──────────────────────────────────────────────
+function togglePanel(panelId, bodyId) {
+  const body = document.getElementById(bodyId);
+  const btn = document.querySelector(`#${panelId} .col-btn`);
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? '▾' : '▸';
+}
+function toggleTurn(id) {
+  document.getElementById(id).classList.toggle('turn-collapsed');
+}
+function setAllTurns(collapse) {
+  document.querySelectorAll('.turn').forEach(t =>
+    collapse ? t.classList.add('turn-collapsed') : t.classList.remove('turn-collapsed'));
+}
+function toggleSideSection(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('sc-collapsed');
+  const btn = el.querySelector('.col-btn');
+  btn.textContent = el.classList.contains('sc-collapsed') ? '▸' : '▾';
+}
+
+// ── Flow chart data ───────────────────────────────────────────────
+const LANE = {
+  main: { y: 40,  label: 'main',             lineColor: '#8b949e' },
+  ex:   { y: 95,  label: 'Explore',           lineColor: '#7a5ea8' },
+  gp:   { y: 133, label: 'general-purpose',   lineColor: '#7a5ea8' },
+  cg:   { y: 171, label: 'claude-code-guide', lineColor: '#5a8a70' },
+};
+
+const TYPE = {
+  user:  { color: '#58a6ff', r: 8,  shape: 'circle'  },
+  bash:  { color: '#ffa657', r: 5,  shape: 'circle'  },
+  read:  { color: '#79c0ff', r: 4,  shape: 'circle'  },
+  edit:  { color: '#d2a8ff', r: 5,  shape: 'circle'  },
+  write: { color: '#d29922', r: 5,  shape: 'circle'  },
+  spawn: { color: '#d2a8ff', r: 8,  shape: 'diamond' },
+  skill: { color: '#3fb950', r: 7,  shape: 'diamond' },
+};
+
+// tok: attributed token count for tooltip (null = turn-level, not per-tool)
+const EVENTS = [
+  // Turn 1
+  {lane:'main',type:'user',  label:'클로드 사용량 대시보드 만들기',               turn:1, tok:null},
+  {lane:'main',type:'bash',  label:'ls ~/.claude/ ~/.claude-personal/',           turn:1, tok:12450},
+  {lane:'main',type:'bash',  label:'ls ~/.claude-personal/sessions/ | head -5',  turn:1, tok:8200},
+  {lane:'main',type:'read',  label:'~/.claude-personal/CLAUDE.md',               turn:1, tok:31200},
+  {lane:'main',type:'read',  label:'...b68ceb33.jsonl (entry 구조 확인)',         turn:1, tok:18900},
+  // Turn 2
+  {lane:'main',type:'user',  label:'응 만들어줘. 초안 검토할게',                  turn:2, tok:null},
+  {lane:'main',type:'bash',  label:'mkdir -p .../260429_claude_usage_dashboard/', turn:2, tok:5100},
+  {lane:'main',type:'write', label:'core.py (340 lines)',                         turn:2, tok:142000},
+  {lane:'main',type:'write', label:'app.py (60 lines)',                           turn:2, tok:28000},
+  {lane:'main',type:'write', label:'static/index.html (480 lines)',               turn:2, tok:195000},
+  {lane:'main',type:'bash',  label:'pip install fastapi uvicorn && python app.py',turn:2, tok:9800},
+  // Skill
+  {lane:'main',type:'skill', label:'/model → claude-sonnet-4-6',                 turn:3, tok:null},
+  // Turn 4 — sequential Explore agent
+  {lane:'main',type:'user',  label:'세부 토큰 / 모델별 / 에이전트별 보고싶음',    turn:4, tok:null},
+  {lane:'main',type:'read',  label:'core.py',                                     turn:4, tok:44200},
+  {lane:'main',type:'spawn', label:'→ Explore: search prior art', spawnLane:'ex',turn:4, tok:null},
+  {lane:'ex',  type:'bash',  label:'find ~/.claude-personal -name "*.jsonl"',     turn:4, tok:3100},
+  {lane:'ex',  type:'read',  label:'sample.jsonl (entry types)',                  turn:4, tok:8900},
+  {lane:'ex',  type:'bash',  label:'python3 inspect_entries.py',                  turn:4, tok:5200},
+  {lane:'main',type:'edit',  label:'core.py — aggregate_by_model()',    joinFrom:'ex', turn:5, tok:88000},
+  {lane:'main',type:'edit',  label:'static/index.html — renderBreakdown()',       turn:5, tok:110000},
+  // Turn 5 — sync fix
+  {lane:'main',type:'user',  label:'대시보드에 세션 6개 안나옴',                  turn:6, tok:null},
+  {lane:'main',type:'bash',  label:'ls ~/.claude-work/sessions/',                 turn:6, tok:6700},
+  {lane:'main',type:'read',  label:'core.py HOMES config',                        turn:6, tok:38000},
+  {lane:'main',type:'edit',  label:'core.py — HOMES=[.claude-work]',             turn:6, tok:52000},
+  {lane:'main',type:'bash',  label:'curl localhost:8765/api/sessions',            turn:6, tok:4200},
+  // Skill compact
+  {lane:'main',type:'skill', label:'/compact',                                   turn:7, tok:null},
+  // Turn 8 — PARALLEL agents: Explore + claude-code-guide simultaneously
+  {lane:'main',type:'user',  label:'세션명 / 모델·스킬 드릴다운 추가',            turn:8, tok:null},
+  {lane:'main',type:'read',  label:'static/index.html',                           turn:8, tok:62000},
+  {lane:'main',type:'spawn', label:'→ Explore + claude-code-guide (parallel)',
+                              spawnLane:'ex', spawnLane2:'cg',                    turn:8, tok:null},
+  // Explore events
+  {lane:'ex',  type:'bash',  label:'cmux tree --all',                             turn:8, tok:2800},
+  {lane:'ex',  type:'bash',  label:'cmux identify --surface <uuid>',              turn:8, tok:3100},
+  // claude-code-guide events (PARALLEL — same x range as ex)
+  {lane:'cg',  type:'read',  label:'Claude Code session API docs',                turn:8, tok:4200},
+  {lane:'cg',  type:'bash',  label:'grep -r "openDrilldown" .',                   turn:8, tok:2600},
+  {lane:'ex',  type:'read',  label:'core.py _cmux_session_name (existing)',       turn:8, tok:5100},
+  // both join
+  {lane:'main',type:'edit',  label:'core.py — _cmux_session_name()', joinFrom:'ex', joinFrom2:'cg', turn:9, tok:72000},
+  {lane:'main',type:'edit',  label:'static/index.html — openDrilldown()',         turn:9, tok:95000},
+  {lane:'main',type:'bash',  label:'curl localhost:8765/api/stats',               turn:9, tok:7300},
+  // Memory save
+  {lane:'main',type:'user',  label:'이 작업 Opus 쓸 이유가 있나?',               turn:10, tok:null},
+  {lane:'main',type:'write', label:'memory/feedback_model_choice.md',             turn:10, tok:14000},
+  {lane:'main',type:'edit',  label:'memory/MEMORY.md',                            turn:10, tok:22000},
+];
+
+// ── Position calculation (per-lane x tracking) ───────────────────
+function computePositions() {
+  const DX = 17, TURN_GAP = 26, X0 = 82;
+  const laneX = {};
+  let mainX = X0;
+  let prevTurn = null;
+
+  return EVENTS.map(e => {
+    // Turn gap on main
+    if (prevTurn !== null && e.turn !== prevTurn && e.lane === 'main')
+      mainX += TURN_GAP;
+
+    // Advance mainX past any completed agents (joinFrom)
+    if (e.joinFrom   && laneX[e.joinFrom]   > mainX) mainX = laneX[e.joinFrom];
+    if (e.joinFrom2  && laneX[e.joinFrom2]  > mainX) mainX = laneX[e.joinFrom2];
+
+    // Compute this event's x
+    let x;
+    if (e.lane === 'main') {
+      x = mainX; mainX += DX;
+    } else {
+      if (!(e.lane in laneX)) laneX[e.lane] = mainX;
+      x = laneX[e.lane];
+      laneX[e.lane] += DX;
+    }
+
+    // Initialize spawned lanes to current mainX
+    if (e.spawnLane)  laneX[e.spawnLane]  = mainX;
+    if (e.spawnLane2) laneX[e.spawnLane2] = mainX;
+
+    prevTurn = e.turn;
+    return { ...e, x, y: LANE[e.lane].y };
+  });
+}
+
+// ── SVG render ───────────────────────────────────────────────────
+(function renderFlow() {
+  const pos = computePositions();
+  const maxX = Math.max(...pos.map(p => p.x)) + 30;
+  const svgH = 210;
+
+  const svg = document.getElementById('flow-svg');
+  svg.setAttribute('width', maxX);
+  svg.setAttribute('height', svgH);
+  svg.style.minWidth = maxX + 'px';
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, parent) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (parent) parent.appendChild(el);
+    return el;
+  };
+
+  // Defs (glow filter)
+  const defs = mk('defs', {}, svg);
+  const filt = mk('filter', {id:'glow', x:'-50%', y:'-50%', width:'200%', height:'200%'}, defs);
+  mk('feGaussianBlur', {stdDeviation:'2.5', result:'b'}, filt);
+  const fm = mk('feMerge', {}, filt);
+  mk('feMergeNode', {in:'b'}, fm);
+  mk('feMergeNode', {in:'SourceGraphic'}, fm);
+
+  // Turn boundary lines
+  let prevTurnNum = null, prevTX = 82;
+  pos.forEach(p => {
+    if (prevTurnNum !== null && p.turn !== prevTurnNum) {
+      const lx = (prevTX + p.x) / 2;
+      mk('line', {x1:lx,y1:16,x2:lx,y2:svgH-16,
+                  stroke:'#30363d','stroke-width':0.5,'stroke-opacity':0.7}, svg);
+    }
+    prevTX = p.x; prevTurnNum = p.turn;
+  });
+
+  // Lane rails
+  for (const [, lane] of Object.entries(LANE)) {
+    mk('line', {x1:74, y1:lane.y, x2:maxX-10, y2:lane.y,
+                stroke:lane.lineColor, 'stroke-opacity':0.22,
+                'stroke-width':1.5, 'stroke-dasharray':'3,4'}, svg);
+  }
+
+  // Lane labels
+  for (const [, lane] of Object.entries(LANE)) {
+    const t = mk('text', {x:4, y:lane.y+4,
+                  'font-family':'ui-monospace,monospace','font-size':8.5,
+                  fill:lane.lineColor, 'fill-opacity':0.8}, svg);
+    t.textContent = lane.label;
+  }
+
+  // Connections between consecutive same-lane events
+  for (let i = 1; i < pos.length; i++) {
+    const a = pos[i-1], b = pos[i];
+    if (a.lane !== b.lane) continue;
+    if (b.joinFrom || b.joinFrom2) continue; // bezier handles join
+    if (a.type === 'spawn') continue;
+    mk('line', {x1:a.x, y1:a.y, x2:b.x, y2:b.y,
+                stroke:LANE[a.lane].lineColor, 'stroke-opacity':0.35,
+                'stroke-width':1.5}, svg);
+  }
+
+  // Spawn → agent fork beziers & agent → join beziers
+  // Collect spawn events
+  const spawns = pos.filter(p => p.spawnLane || p.spawnLane2);
+  spawns.forEach(sp => {
+    const drawFork = (laneKey, spawnX, spawnY) => {
+      const agY = LANE[laneKey].y;
+      const agEvents = pos.filter(p => p.lane === laneKey && p.x >= spawnX);
+      if (!agEvents.length) return;
+      const af = agEvents[0];
+      const cpX = spawnX + (af.x - spawnX) * 0.45;
+      mk('path', {
+        d:`M${spawnX},${spawnY} C${cpX},${spawnY} ${cpX},${agY} ${af.x},${agY}`,
+        stroke:'#d2a8ff','stroke-opacity':0.5,'stroke-width':1.5,
+        fill:'none','stroke-dasharray':'4,2'}, svg);
+    };
+    if (sp.spawnLane)  drawFork(sp.spawnLane,  sp.x, sp.y);
+    if (sp.spawnLane2) drawFork(sp.spawnLane2, sp.x, sp.y);
+  });
+
+  // Join beziers
+  pos.forEach(p => {
+    const drawJoin = (fromLane, joinX, joinY) => {
+      const agY = LANE[fromLane].y;
+      // Find last event in this agent lane before the join
+      const agLast = [...pos].reverse().find(q => q.lane === fromLane && q.x < joinX);
+      if (!agLast) return;
+      const cpX = agLast.x + (joinX - agLast.x) * 0.55;
+      mk('path', {
+        d:`M${agLast.x},${agY} C${cpX},${agY} ${cpX},${joinY} ${joinX},${joinY}`,
+        stroke:'#d2a8ff','stroke-opacity':0.5,'stroke-width':1.5,
+        fill:'none','stroke-dasharray':'4,2'}, svg);
+    };
+    if (p.joinFrom)  drawJoin(p.joinFrom,  p.x, p.y);
+    if (p.joinFrom2) drawJoin(p.joinFrom2, p.x, p.y);
+  });
+
+  // Dots
+  const tip = document.getElementById('tip');
+  pos.forEach(p => {
+    const tc = TYPE[p.type];
+    let el;
+    if (tc.shape === 'diamond') {
+      const s = tc.r;
+      el = mk('polygon', {
+        points:`${p.x},${p.y-s} ${p.x+s},${p.y} ${p.x},${p.y+s} ${p.x-s},${p.y}`,
+        fill:tc.color, opacity:0.9, style:'cursor:pointer'}, svg);
+    } else {
+      el = mk('circle', {cx:p.x, cy:p.y, r:tc.r,
+               fill:tc.color, opacity:0.85, style:'cursor:pointer'}, svg);
+    }
+
+    el.addEventListener('mouseenter', () => {
+      if (tc.shape === 'circle') el.setAttribute('r', tc.r + 2);
+      el.setAttribute('filter', 'url(#glow)');
+      tip.querySelector('.t-type').textContent = p.type.toUpperCase();
+      tip.querySelector('.t-type').style.color = tc.color;
+      tip.querySelector('.t-lbl').textContent = p.label;
+      const tokEl = tip.querySelector('.t-tok');
+      if (p.tok != null) {
+        const n = p.tok >= 1e6 ? (p.tok/1e6).toFixed(1)+'M'
+                : p.tok >= 1e3 ? (p.tok/1e3).toFixed(1)+'K'
+                : p.tok.toString();
+        tokEl.textContent = '🪙 ' + n + ' tokens (attributed)';
+        tokEl.style.display = 'block';
+      } else {
+        tokEl.style.display = 'none';
+      }
+      tip.style.display = 'block';
+    });
+    el.addEventListener('mousemove', ev => {
+      tip.style.left = (ev.clientX + 14) + 'px';
+      tip.style.top  = (ev.clientY - 10) + 'px';
+    });
+    el.addEventListener('mouseleave', () => {
+      if (tc.shape === 'circle') el.setAttribute('r', tc.r);
+      el.removeAttribute('filter');
+      tip.style.display = 'none';
+    });
+  });
+})();
+</script>
+</body>
+</html>

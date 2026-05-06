@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>Claude Usage Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2330;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --accent: #58a6ff;
+    --good: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+    --opus: #d2a8ff;
+    --sonnet: #79c0ff;
+    --haiku: #7ee787;
+    --personal: #f778ba;
+    --work: #ffa657;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "SF Pro Text", "Pretendard", system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    margin: 0; padding: 16px;
+    font-size: 13px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+  .header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 16px; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--good); animation: pulse 1.5s infinite; vertical-align: middle; margin-right: 6px;}
+  @keyframes pulse { 0%, 100% { opacity: 1;} 50% { opacity: 0.3; }}
+  .grid { display: grid; gap: 12px; }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat-card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .stat-card .breakdown { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .stat-card .breakdown div { display: flex; justify-content: space-between; }
+  .session-list { display: flex; flex-direction: column; gap: 8px; }
+  .session { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color 0.15s; }
+  .session:hover { border-color: var(--accent); }
+  .session.live { border-left: 3px solid var(--good); }
+  .session-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .session-id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+  .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: var(--panel2); border: 1px solid var(--border); }
+  .badge.work { background: rgba(255, 166, 87, 0.15); border-color: var(--work); color: var(--work); }
+  .badge.personal { background: rgba(247, 120, 186, 0.15); border-color: var(--personal); color: var(--personal); }
+  .badge.live { background: rgba(63, 185, 80, 0.15); border-color: var(--good); color: var(--good); }
+  .badge.busy { background: rgba(210, 153, 34, 0.15); border-color: var(--warn); color: var(--warn); }
+  .badge.opus { background: rgba(210, 168, 255, 0.15); border-color: var(--opus); color: var(--opus); }
+  .badge.sonnet { background: rgba(121, 192, 255, 0.15); border-color: var(--sonnet); color: var(--sonnet); }
+  .badge.haiku { background: rgba(126, 231, 135, 0.15); border-color: var(--haiku); color: var(--haiku); }
+  .session-cwd { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
+  .session-snippet { margin-top: 6px; color: var(--text); font-size: 12px; line-height: 1.4;
+                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+                    background: var(--panel2); padding: 6px 8px; border-radius: 4px; border-left: 2px solid var(--border); }
+  .session-meta { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .session-meta span { white-space: nowrap; }
+  .session-meta b { color: var(--text); font-weight: 500; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; z-index: 100; }
+  .modal-bg.show { display: flex; align-items: center; justify-content: center; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+           width: 90%; max-width: 1000px; max-height: 90vh; overflow: auto; padding: 20px; }
+  .modal h2 { color: var(--text); font-size: 16px; }
+  .close { float: right; cursor: pointer; color: var(--muted); font-size: 18px; }
+  .close:hover { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .timeline-bars { display: flex; align-items: end; gap: 1px; height: 80px; padding: 8px; background: var(--panel2); border-radius: 4px; margin: 8px 0; overflow-x: auto; }
+  .timeline-bar { min-width: 3px; background: var(--accent); opacity: 0.7; border-radius: 1px 1px 0 0; }
+  .agent-list { display: flex; flex-direction: column; gap: 4px; }
+  .agent-item { background: var(--panel2); padding: 6px 8px; border-radius: 4px; font-size: 12px; display: flex; gap: 8px; }
+  .agent-item .agent-type { color: var(--accent); font-weight: 500; min-width: 130px; }
+  .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px; margin-top: 8px; }
+  .tool-pill { font-size: 11px; padding: 3px 8px; border-radius: 12px; background: var(--panel2); display: flex; justify-content: space-between; }
+  .tool-pill .count { color: var(--accent); font-weight: 600; }
+  .section { margin-top: 16px; }
+  .section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .empty { color: var(--muted); font-style: italic; padding: 12px; text-align: center; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button:hover { border-color: var(--accent); }
+  .filters { display: flex; gap: 6px; margin-bottom: 12px; }
+  .filter-btn { font-size: 11px; padding: 3px 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .plan-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  .plan-row { display: flex; align-items: center; gap: 12px; }
+  .plan-bar-wrap { flex: 1; height: 14px; background: var(--panel2); border-radius: 7px; overflow: hidden; position: relative; }
+  .plan-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--good)); transition: width 0.4s; }
+  .plan-bar.warn { background: linear-gradient(90deg, var(--warn), var(--danger)); }
+  .plan-bar.over { background: var(--danger); }
+  .plan-meta { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 16px; }
+  .plan-select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; font-size: 12px; }
+  .breakdown-section { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .breakdown-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .breakdown-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .breakdown-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .breakdown-row .label { min-width: 130px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .breakdown-row .bar-wrap { flex: 1; height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+  .breakdown-row .bar { height: 100%; background: var(--accent); opacity: 0.7; }
+  .breakdown-row .val { font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; color: var(--muted); }
+  .workflow { display: flex; flex-direction: column; gap: 0; border-left: 2px solid var(--border); padding-left: 14px; margin-left: 4px; }
+  .workflow-item { position: relative; padding: 6px 0 8px; font-size: 12px; }
+  .workflow-item::before { content: ""; position: absolute; left: -19px; top: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .workflow-item.user::before { background: var(--accent); }
+  .workflow-item.agent::before { background: var(--opus); }
+  .workflow-item.skill::before { background: var(--haiku); }
+  .workflow-item.slash_command::before { background: var(--haiku); }
+  .workflow-time { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .workflow-label { font-weight: 500; }
+  .workflow-detail { color: var(--muted); margin-top: 3px; font-size: 11px;
+                     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .toggle-more { width:100%; margin-top:4px; font-size:11px; color:var(--muted); text-align:center;
+                 background:transparent; border:1px dashed var(--border); border-radius:4px;
+                 padding:4px 0; cursor:pointer; }
+  .toggle-more:hover { color:var(--text); border-color:var(--accent); }
+  /* ── Harness Flow (full modal redesign) ── */
+  .hf-scroll { overflow-x:auto; padding:6px 0 4px; }
+  #hf-tip { position:fixed;pointer-events:none;background:#1c2330;border:1px solid var(--border);
+            border-radius:6px;padding:7px 11px;font-size:11px;color:var(--text);
+            max-width:300px;line-height:1.6;z-index:9999;display:none;box-shadow:0 4px 16px rgba(0,0,0,.6); }
+  #hf-tip .t-type{font-weight:700;font-size:10px;letter-spacing:.5px;}
+  #hf-tip .t-lbl{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px;display:block;margin-top:2px;word-break:break-all;}
+  #hf-tip .t-tok{color:var(--good);font-size:10px;margin-top:4px;}
+  .hf-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px;}
+  .hf-panel-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);}
+  .hf-panel-hdr h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:500;}
+  .hf-legend{display:flex;gap:10px;flex-wrap:wrap;}
+  .hf-li{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);}
+  .hf-ld{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;}
+  .hf-ld.dia{border-radius:0;transform:rotate(45deg);width:7px;height:7px;}
+  .hf-col-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px;line-height:1;}
+  .hf-col-btn:hover{color:var(--text);background:var(--panel2);}
+  .hf-layout{display:grid;grid-template-columns:1fr 220px;gap:14px;align-items:start;margin-bottom:14px;}
+  .hf-flow-col{display:flex;flex-direction:column;gap:2px;}
+  .hf-flow-ctrl{display:flex;gap:6px;margin-bottom:6px;}
+  .hf-flow-ctrl button{font-size:10px;padding:3px 8px;border-radius:4px;background:var(--panel2);border:1px solid var(--border);color:var(--muted);cursor:pointer;}
+  .hf-flow-ctrl button:hover{border-color:var(--accent);color:var(--text);}
+  .hf-turn{display:flex;flex-direction:column;}
+  .hf-turn-hdr{display:flex;gap:8px;align-items:flex-start;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px 8px 0 0;border-bottom:none;cursor:pointer;user-select:none;}
+  .hf-turn-hdr:hover{background:#1a2030;}
+  .hf-turn.hf-collapsed .hf-turn-hdr{border-radius:8px;border-bottom:1px solid var(--border);}
+  .hf-turn-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px;}
+  .hf-turn-text{font-size:12px;line-height:1.5;flex:1;}
+  .hf-turn-time{font-size:10px;color:var(--muted);white-space:nowrap;margin-left:auto;}
+  .hf-turn-arrow{font-size:11px;color:var(--muted);flex-shrink:0;margin-top:2px;transition:transform .15s;}
+  .hf-turn.hf-collapsed .hf-turn-arrow{transform:rotate(-90deg);}
+  .hf-turn-body{background:var(--panel2);border:1px solid var(--border);border-radius:0 0 8px 8px;overflow:hidden;}
+  .hf-turn.hf-collapsed .hf-turn-body{display:none;}
+  .hf-resp-model{font-size:10px;color:var(--muted);padding:4px 12px;border-bottom:1px solid var(--border);display:flex;gap:10px;}
+  .hf-resp-model .tok{color:var(--text);font-weight:500;}
+  .hf-turn-conn{width:2px;background:var(--border);height:6px;margin-left:19px;}
+  .hf-trow{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px;border-left:3px solid transparent;}
+  .hf-trow+.hf-trow{border-top:1px solid rgba(48,54,61,.4);}
+  .hf-tico{width:14px;text-align:center;flex-shrink:0;font-size:11px;}
+  .hf-tname{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;min-width:46px;}
+  .hf-tdetail{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+  .hf-ttag{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--panel);flex-shrink:0;color:var(--muted);}
+  .hf-t-Bash{border-left-color:var(--work);}   .hf-t-Bash .hf-tname{color:var(--work);}
+  .hf-t-Read{border-left-color:var(--accent);}  .hf-t-Read .hf-tname{color:var(--accent);}
+  .hf-t-Edit{border-left-color:var(--opus);}    .hf-t-Edit .hf-tname{color:var(--opus);}
+  .hf-t-Write{border-left-color:var(--warn);}   .hf-t-Write .hf-tname{color:var(--warn);}
+  .hf-t-skill{border-left-color:var(--good);}   .hf-t-skill .hf-tname{color:var(--good);}
+  .hf-ag-block{margin:4px 12px;border:1px dashed rgba(210,168,255,.35);border-radius:6px;overflow:hidden;}
+  .hf-ag-hdr{display:flex;align-items:center;gap:8px;padding:5px 10px;background:rgba(210,168,255,.06);font-size:11px;border-bottom:1px dashed rgba(210,168,255,.2);}
+  .hf-ag-hdr .atype{color:var(--opus);font-weight:600;}
+  .hf-ag-hdr .adesc{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+  .hf-ag-inner .hf-trow{padding-left:18px;}
+  .hf-skill-ev{display:flex;align-items:center;gap:8px;padding:6px 12px;background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.2);border-radius:6px;font-size:12px;margin:4px 12px;}
+  .hf-sidebar{display:flex;flex-direction:column;gap:10px;}
+  .hf-sc-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .hf-sc-hdr{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .hf-sc-hdr:hover{background:rgba(255,255,255,.02);}
+  .hf-sc-hdr h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:500;}
+  .hf-sc-body{padding:8px 12px;}
+  .hf-sc-panel.hf-sc-collapsed .hf-sc-body{display:none;}
+  .hf-sc-panel.hf-sc-collapsed .hf-sc-hdr{border-bottom:none;}
+  .hf-ref-item{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px;border-bottom:1px solid rgba(48,54,61,.5);}
+  .hf-ref-item:last-child{border:none;}
+  .hf-ref-path{color:var(--text);font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:10px;}
+  .hf-ref-ops{display:flex;gap:3px;flex-shrink:0;margin-left:6px;}
+  .hf-ref-op{font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600;}
+  .hf-ref-op.r{background:rgba(88,166,255,.2);color:var(--accent);}
+  .hf-ref-op.e{background:rgba(210,168,255,.2);color:var(--opus);}
+  .hf-ref-op.w{background:rgba(210,153,34,.2);color:var(--warn);}
+  .hf-ref-op.x{background:rgba(255,166,87,.2);color:var(--work);}
+  .hf-ref-sec{font-size:10px;color:var(--muted);margin:6px 0 3px;display:flex;align-items:center;gap:4px;}
+  .hf-ref-sec::after{content:'';flex:1;height:1px;background:var(--border);}
+  /* Section toggle */
+  .sec-hdr { display:flex; justify-content:space-between; align-items:center; }
+  .sec-btn { background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;
+             padding:0 2px;line-height:1; }
+  .sec-btn:hover { color:var(--text); }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1><span class="pulse" id="pulse"></span>Claude Usage Dashboard</h1>
+      <h2 id="last-update">connecting...</h2>
+    </div>
+    <div class="controls">
+      <span style="font-size:11px;color:var(--muted)" id="counts"></span>
+      <button id="refresh-btn" title="Re-read local files">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="plan-card" id="plan-card"></div>
+
+  <div class="grid stats-grid" id="stats-grid"></div>
+
+  <div class="breakdown-section" id="breakdown-section"></div>
+
+  <div class="filters">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="live">Live only</button>
+    <button class="filter-btn" data-filter="work">Work (cdw)</button>
+    <button class="filter-btn" data-filter="personal">Personal (cdp)</button>
+  </div>
+
+  <div class="session-list" id="session-list"></div>
+
+  <div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <div id="hf-tip">
+    <span class="t-type"></span>
+    <span class="t-lbl"></span>
+    <span class="t-tok"></span>
+  </div>
+
+<script>
+const fmt = (n) => n == null ? "—" : n.toLocaleString();
+const fmtK = (n) => {
+  if (n == null) return "—";
+  if (n >= 1e9) return (n/1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n/1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
+  return n.toString();
+};
+const fmtUsd = (n) => "$" + (n || 0).toFixed(2);
+const fmtTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return Math.floor(diff) + "s ago";
+  if (diff < 3600) return Math.floor(diff/60) + "m ago";
+  if (diff < 86400) return Math.floor(diff/3600) + "h ago";
+  return Math.floor(diff/86400) + "d ago";
+};
+const modelClass = (m) => {
+  if (!m) return "";
+  if (m.includes("opus")) return "opus";
+  if (m.includes("sonnet")) return "sonnet";
+  if (m.includes("haiku")) return "haiku";
+  return "";
+};
+
+let currentFilter = "all";
+let lastSessions = [];
+
+// Plan tier limits (token estimates per 5h rolling window)
+const PLAN_LIMITS = {
+  "pro":     { name: "Pro",      tokens: 7_000_000 },
+  "max5":    { name: "Max (5x)", tokens: 35_000_000 },
+  "max20":   { name: "Max (20x)", tokens: 140_000_000 },
+  "custom":  { name: "Custom",   tokens: null },
+};
+
+function getPlan() {
+  const tier = localStorage.getItem("plan_tier") || "max5";
+  const customStr = localStorage.getItem("plan_custom_tokens");
+  const custom = customStr ? parseInt(customStr) : null;
+  const limit = tier === "custom" ? custom : PLAN_LIMITS[tier].tokens;
+  return { tier, limit };
+}
+
+function renderPlan(rolling) {
+  const card = document.getElementById("plan-card");
+  const { tier, limit } = getPlan();
+  const total = rolling?.total || {};
+  const tokens = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
+  const pct = limit ? Math.min(100, Math.round(100 * tokens / limit)) : 0;
+  const overPct = limit ? (100 * tokens / limit) : 0;
+  const barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
+
+  let resetText = "—";
+  if (rolling?.reset_at) {
+    const reset = new Date(rolling.reset_at);
+    const now = new Date();
+    const diffMs = reset - now;
+    if (diffMs > 0) {
+      const h = Math.floor(diffMs / 3600000);
+      const m = Math.floor((diffMs % 3600000) / 60000);
+      resetText = (h ? h + "시간 " : "") + m + "분 후 재설정";
+    } else {
+      resetText = "윈도우 만료 — 다음 메시지가 새 윈도우 시작";
+    }
+  }
+
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:13px;color:var(--muted);">플랜 사용량 한도 (5시간 rolling)</div>
+      <div>
+        <select class="plan-select" id="plan-select">
+          ${Object.entries(PLAN_LIMITS).map(([k, v]) =>
+            `<option value="${k}" ${k===tier?"selected":""}>${v.name}${v.tokens?" — "+fmtK(v.tokens):""}</option>`
+          ).join("")}
+        </select>
+        ${tier === "custom" ? `<input type="number" id="plan-custom" value="${limit||""}" placeholder="tokens" style="margin-left:6px;width:120px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:12px;" />` : ""}
+      </div>
+    </div>
+    <div class="plan-row">
+      <div style="min-width:90px;font-size:14px;font-weight:600;">${pct}%</div>
+      <div class="plan-bar-wrap"><div class="plan-bar ${barCls}" style="width:${pct}%"></div></div>
+      <div style="min-width:140px;text-align:right;font-size:11px;color:var(--muted);">
+        ${fmtK(tokens)} / ${limit ? fmtK(limit) : "—"}
+      </div>
+    </div>
+    <div class="plan-meta">
+      <span>📊 ${rolling?.msg_count||0} messages</span>
+      <span>💵 ${fmtUsd(rolling?.cost_usd)}</span>
+      <span>⏱ ${resetText}</span>
+      <span style="color:${overPct>=90?"var(--warn)":"var(--muted)"}">${PLAN_LIMITS[tier]?.name || ""}${tier!=="custom" && limit ? "" : " (직접 설정)"}</span>
+    </div>
+  `;
+  document.getElementById("plan-select").addEventListener("change", e => {
+    localStorage.setItem("plan_tier", e.target.value);
+    refresh();
+  });
+  const ci = document.getElementById("plan-custom");
+  if (ci) ci.addEventListener("change", e => {
+    localStorage.setItem("plan_custom_tokens", e.target.value);
+    refresh();
+  });
+}
+
+function renderBreakdown(stats) {
+  const all = stats.windows?.all || { by_model: {}, total: {} };
+  const ags = stats.by_agent_skill || { subagents: {}, skills: {} };
+  const totalT = (all.total?.input||0)+(all.total?.output||0)+(all.total?.cache_create||0)+(all.total?.cache_read||0);
+
+  // By model
+  const models = Object.entries(all.by_model || {})
+    .map(([m, u]) => ({ m, sum: (u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0) }))
+    .sort((a,b)=>b.sum-a.sum);
+  const maxModel = Math.max(...models.map(x=>x.sum), 1);
+
+  // By subagent type
+  const subs = Object.entries(ags.subagents || {})
+    .map(([k, v]) => ({ k, sum: (v.tokens.input||0)+(v.tokens.output||0)+(v.tokens.cache_create||0)+(v.tokens.cache_read||0), count: v.count, sessions: v.sessions }))
+    .sort((a,b)=>b.sum-a.sum);
+  const maxSub = Math.max(...subs.map(x=>x.sum), 1);
+
+  // By skill (count only — skills run inline so no token attribution)
+  const skills = Object.entries(ags.skills || {})
+    .map(([k, v]) => ({ k, count: v.count, sessions: v.sessions, session_count: (v.sessions||[]).length }))
+    .sort((a,b)=>b.count-a.count);
+  const maxSkill = Math.max(...skills.map(x=>x.count), 1);
+
+  const subRow = x => `
+    <div class="breakdown-row" style="cursor:pointer" onclick='openDrilldown("subagent","${escapeHtml(x.k)}")'>
+      <span class="label">🤖 ${escapeHtml(x.k)}</span>
+      <div class="bar-wrap"><div class="bar" style="width:${100*x.sum/maxSub}%;background:var(--opus);"></div></div>
+      <span class="val">${fmtK(x.sum)} · ${x.count}회</span>
+    </div>`;
+
+  const skillRow = x => `
+    <div class="breakdown-row" style="cursor:pointer" onclick='openDrilldown("skill","${escapeHtml(x.k)}")'>
+      <span class="label">/ ${escapeHtml(x.k)}</span>
+      <div class="bar-wrap"><div class="bar" style="width:${100*x.count/maxSkill}%;background:var(--haiku);"></div></div>
+      <span class="val">${x.count}회 · ${x.session_count}세션</span>
+    </div>`;
+
+  const collapsibleRows = (items, rowFn, id) => {
+    if (!items.length) return "";
+    const visHtml = items.slice(0, 5).map(rowFn).join("");
+    const hidItems = items.slice(5);
+    if (!hidItems.length) return visHtml;
+    return visHtml +
+      `<div id="${id}-more" style="display:none">${hidItems.map(rowFn).join("")}</div>` +
+      `<button class="toggle-more" id="${id}-btn" onclick="toggleMore('${id}')">+ ${hidItems.length}개 더 보기</button>`;
+  };
+
+  const subsHtml = subs.length
+    ? collapsibleRows(subs, subRow, "subs")
+    : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">no subagent runs</div>';
+
+  const skillsHtml = skills.length
+    ? collapsibleRows(skills, skillRow, "skills-list")
+    : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">no slash commands</div>';
+
+  document.getElementById("breakdown-section").innerHTML = `
+    <div class="breakdown-card">
+      <h3>전체 — 모델별 토큰 <span style="font-size:10px;color:var(--muted)">(클릭→세션 목록)</span></h3>
+      ${models.length ? models.map(x => `
+        <div class="breakdown-row" style="cursor:pointer" onclick='openDrilldown("model","${escapeHtml(x.m)}")'>
+          <span class="label"><span class="badge ${modelClass(x.m)}">${x.m}</span></span>
+          <div class="bar-wrap"><div class="bar" style="width:${100*x.sum/maxModel}%"></div></div>
+          <span class="val">${fmtK(x.sum)} (${Math.round(100*x.sum/Math.max(totalT,1))}%)</span>
+        </div>`).join("") : '<div class="empty">no data</div>'}
+    </div>
+    <div class="breakdown-card">
+      <h3>전체 — 서브에이전트 / 스킬 <span style="font-size:10px;color:var(--muted)">(클릭→세션 목록)</span></h3>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">subagents (토큰 분리됨)</div>
+      ${subsHtml}
+      <div style="font-size:11px;color:var(--muted);margin:10px 0 6px;">slash commands / skills (호출 횟수만)</div>
+      ${skillsHtml}
+    </div>
+  `;
+}
+
+let _lastStats = null;
+function openDrilldown(type, key) {
+  if (!_lastStats) return;
+  const modal = document.getElementById("modal");
+  const bg = document.getElementById("modal-bg");
+
+  let sessions = [];
+  let title = "";
+  if (type === "model") {
+    const entry = (_lastStats.by_model || {})[key] || {};
+    sessions = entry.sessions || [];
+    title = `모델: ${key}`;
+  } else if (type === "subagent") {
+    const entry = ((_lastStats.by_agent_skill || {}).subagents || {})[key] || {};
+    sessions = entry.sessions || [];
+    title = `서브에이전트: ${key}`;
+  } else if (type === "skill") {
+    const entry = ((_lastStats.by_agent_skill || {}).skills || {})[key] || {};
+    sessions = entry.sessions || [];
+    title = `/ ${key} 스킬`;
+  }
+
+  modal.innerHTML = `
+    <span class="close" onclick="closeModal()">×</span>
+    <h2>${escapeHtml(title)}</h2>
+    <div style="color:var(--muted);font-size:11px;margin-bottom:12px;">${sessions.length}개 세션에서 사용됨</div>
+    <table>
+      <thead><tr><th>세션</th><th>환경</th><th>작업</th><th>${type==="skill"?"호출":"토큰"}</th><th>마지막 활동</th></tr></thead>
+      <tbody>
+        ${sessions.map(s => {
+          const cwd = (s.cwd || "").replace(/^.*com~apple~CloudDocs\//, "…/");
+          const text = s.description || s.first_user_text || "—";
+          const metric = type === "skill"
+            ? `${s.count}회`
+            : fmtK(s.tokens);
+          return `<tr style="cursor:pointer" onclick="closeModal();openDetail('${s.session_id}')">
+            <td>
+              ${s.is_live ? '<span class="badge live" style="font-size:9px">LIVE</span> ' : ""}
+              <span style="font-family:monospace;font-size:10px;color:var(--muted)">${s.session_id.slice(0,8)}</span>
+            </td>
+            <td><span class="badge ${s.home}">${s.home}</span></td>
+            <td style="max-width:300px">
+              <div style="font-size:11px;font-family:monospace;color:var(--muted)">${escapeHtml(cwd)}</div>
+              <div style="font-size:12px;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(text)}</div>
+            </td>
+            <td class="num">${metric}</td>
+            <td class="num" style="color:var(--muted)">${fmtTime(s.last_message_at)}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+  bg.classList.add("show");
+}
+
+function renderStats(windows) {
+  const grid = document.getElementById("stats-grid");
+  const labels = { today: "Today", week: "This Week", all: "All Time" };
+  grid.innerHTML = Object.entries(labels).map(([key, label]) => {
+    const w = windows[key] || { total: {}, by_model: {}, cost_usd: 0 };
+    const t = w.total || {};
+    const sumTokens = (t.input||0)+(t.output||0)+(t.cache_create||0)+(t.cache_read||0);
+    const models = Object.keys(w.by_model || {});
+    return `
+      <div class="stat-card">
+        <div class="label">${label}</div>
+        <div class="value">${fmtK(sumTokens)} <span style="font-size:13px;color:var(--muted);">tokens</span></div>
+        <div class="sub">${fmtUsd(w.cost_usd)} · ${models.length} models</div>
+        <div class="breakdown">
+          <div><span>input</span><span>${fmtK(t.input)}</span></div>
+          <div><span>output</span><span>${fmtK(t.output)}</span></div>
+          <div><span>cache write</span><span>${fmtK(t.cache_create)}</span></div>
+          <div><span>cache read</span><span>${fmtK(t.cache_read)}</span></div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function renderSessions(sessions) {
+  lastSessions = sessions;
+  const list = document.getElementById("session-list");
+  const filtered = sessions.filter(s => {
+    if (currentFilter === "all") return true;
+    if (currentFilter === "live") return s.is_live;
+    if (currentFilter === "work") return s.home === "work";
+    if (currentFilter === "personal") return s.home === "personal";
+    return true;
+  });
+  const liveCount = sessions.filter(s => s.is_live).length;
+  document.getElementById("counts").textContent = `${liveCount} live · ${sessions.length} total`;
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty">No sessions match this filter.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(s => {
+    const tokens = (s.usage_total?.input||0)+(s.usage_total?.output||0)+(s.usage_total?.cache_create||0)+(s.usage_total?.cache_read||0);
+    const models = Object.keys(s.model_usage || {});
+    const cwd = s.cwd ? s.cwd.replace(/^.*com~apple~CloudDocs\//, "…/") : "—";
+    const snippet = s.last_assistant_text || s.last_user_text || s.first_user_text || "";
+    const lastTool = s.last_tool_use ? s.last_tool_use.name : null;
+    const counts = s.msg_counts || {};
+    const um = s.usage_main || {};
+    const us = s.usage_subagents || {};
+    const mainT = (um.input||0)+(um.output||0)+(um.cache_create||0)+(um.cache_read||0);
+    const subT = (us.input||0)+(us.output||0)+(us.cache_create||0)+(us.cache_read||0);
+    const subPct = tokens > 0 ? Math.round(100 * subT / tokens) : 0;
+    return `
+      <div class="session ${s.is_live ? "live" : ""}" onclick="openDetail('${s.session_id}')">
+        <div class="session-header">
+          <div class="badges">
+            ${s.is_live ? `<span class="badge live">● LIVE${s.status === "busy" ? " busy" : ""}</span>` : ""}
+            <span class="badge ${s.home}">${s.home}</span>
+            ${models.map(m => `<span class="badge ${modelClass(m)}">${m.replace("claude-","")}</span>`).join("")}
+            ${s.subagents_count ? `<span class="badge">🤖 ${s.subagents_count} sub${s.subagents_count>1?"s":""}</span>` : ""}
+            ${s.active_subagents ? `<span class="badge busy">⚡ ${s.active_subagents} running</span>` : ""}
+          </div>
+          <span class="session-id">${s.session_id.slice(0,8)} · ${fmtTime(s.last_message_at)}</span>
+        </div>
+        ${s.session_name ? `<div style="font-size:13px;font-weight:500;margin-bottom:3px;">${escapeHtml(s.session_name)}</div>` : ""}
+        <div class="session-cwd">${cwd}${s.git_branch ? " · " + s.git_branch : ""}</div>
+        ${snippet ? `<div class="session-snippet">${escapeHtml(snippet)}</div>` : ""}
+        <div class="session-meta">
+          <span>💬 <b>${counts.user||0}</b> turns</span>
+          <span>🪙 <b>${fmtK(tokens)}</b>${subT ? ` <span style="color:var(--muted)">(main ${fmtK(mainT)} + sub ${fmtK(subT)} · ${subPct}%)</span>` : ""}</span>
+          <span>💵 <b>${fmtUsd(s.cost_usd)}</b></span>
+          ${lastTool ? `<span>🔧 last: <b>${lastTool}</b></span>` : ""}
+          ${s.pid ? `<span>PID <b>${s.pid}</b></span>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function escapeHtml(s) {
+  return (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ── Harness Flow helpers ─────────────────────────────────────────────
+const HF_TYPE = {
+  user:  {color:'#58a6ff',r:8, shape:'circle'},
+  Bash:  {color:'#ffa657',r:5, shape:'circle'},
+  Read:  {color:'#79c0ff',r:4, shape:'circle'},
+  Edit:  {color:'#d2a8ff',r:5, shape:'circle'},
+  Write: {color:'#d29922',r:5, shape:'circle'},
+  tool:  {color:'#8b949e',r:4, shape:'circle'},
+  spawn: {color:'#d2a8ff',r:8, shape:'diamond'},
+  skill: {color:'#3fb950',r:7, shape:'diamond'},
+};
+const HF_ICON = {Bash:'⚡',Read:'📖',Edit:'📝',Write:'✏️',tool:'🔧',spawn:'🤖',skill:'⚡',user:'👤'};
+
+function hfToolType(name) {
+  if (!name) return 'tool';
+  if (['Bash','Read','Edit','Write'].includes(name)) return name;
+  return 'tool';
+}
+
+// Build flat event array + lane definitions for the SVG
+function buildHFEvents(events, subagents, agentCalls) {
+  // Match subagents to agent_calls by (agentType + description) — agent_id ≠ tool_use_id
+  const toolToSub = {};
+  const usedSubs = new Set();
+  for (const ac of agentCalls) {
+    const key = (ac.subagent||'') + '::' + (ac.description||'');
+    const sub = subagents.find(s =>
+      !usedSubs.has(s.agent_id) &&
+      s.agent_type === ac.subagent &&
+      (s.description||'').slice(0,80) === (ac.description||'').slice(0,80)
+    );
+    if (sub) { toolToSub[ac.tool_use_id] = sub; usedSubs.add(sub.agent_id); }
+  }
+  const lanes = {main:{y:40,label:'main',lineColor:'#8b949e'}};
+  const laneNextY = {_next:78};
+  const result = [];
+  let turn = 0;
+  for (const e of events) {
+    if (e.kind === 'user') {
+      turn++;
+      result.push({lane:'main',type:'user',label:(e.detail||'').slice(0,80),turn,tok:null});
+    } else if (e.kind === 'slash_command' || e.kind === 'skill') {
+      if (!turn) turn = 1;
+      result.push({lane:'main',type:'skill',label:e.label||'',turn,tok:null});
+    } else if (e.kind === 'agent') {
+      if (!turn) turn = 1;
+      const tid = e.tool_use_id;
+      if (tid && !lanes[tid]) {
+        lanes[tid] = {y:laneNextY._next, label:((e.label||'').replace('agent: ','')).slice(0,14), lineColor:'#7a5ea8'};
+        laneNextY._next += 38;
+      }
+      result.push({lane:'main',type:'spawn',label:e.label||'',turn,tok:null,spawnLane:tid});
+      const sub = toolToSub[tid];
+      if (sub && sub.events) {
+        for (const se of (sub.events||[]).filter(x=>x.kind==='tool').slice(0,20)) {
+          result.push({lane:tid,type:hfToolType(se.label),label:(se.detail||se.label||'').slice(0,50),turn,tok:se.tokens||null});
+        }
+      }
+    } else if (e.kind === 'tool') {
+      if (!turn) turn = 1;
+      result.push({lane:'main',type:hfToolType(e.label),label:(e.detail||e.label||'').slice(0,60),turn,tok:e.tokens||null});
+    }
+  }
+  return {events:result, lanes};
+}
+
+function computeHFPos(events, lanes) {
+  const DX=17, TURN_GAP=26;
+  const laneX={}, prevTurnRef={v:null};
+  let mainX=HF_X0;
+  return events.map(e => {
+    if (prevTurnRef.v !== null && e.turn !== prevTurnRef.v && e.lane === 'main') mainX += TURN_GAP;
+    let x;
+    if (e.lane === 'main') { x=mainX; mainX+=DX; }
+    else { if (!(e.lane in laneX)) laneX[e.lane]=mainX; x=laneX[e.lane]; laneX[e.lane]+=DX; }
+    if (e.spawnLane) laneX[e.spawnLane]=mainX;
+    prevTurnRef.v = e.turn;
+    return {...e, x, y:(lanes[e.lane]||lanes.main).y};
+  });
+}
+
+const HF_X0 = 90;
+
+function renderHFSvg(container, events, lanes) {
+  const pos = computeHFPos(events, lanes);
+  if (!pos.length) { container.innerHTML=''; return; }
+  const maxX = Math.max(...pos.map(p=>p.x))+30;
+  const maxY = Math.max(...Object.values(lanes).map(l=>l.y))+28;
+  const ns='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('width',maxX); svg.setAttribute('height',maxY);
+  svg.style.cssText='display:block;min-width:'+maxX+'px';
+  container.innerHTML=''; container.appendChild(svg);
+  const mk=(tag,attrs,par)=>{const el=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,v);if(par)par.appendChild(el);return el;};
+  const defs=mk('defs',{},svg);
+  const filt=mk('filter',{id:'hfglow',x:'-50%',y:'-50%',width:'200%',height:'200%'},defs);
+  mk('feGaussianBlur',{stdDeviation:'2.5',result:'b'},filt);
+  const fm=mk('feMerge',{},filt);mk('feMergeNode',{in:'b'},fm);mk('feMergeNode',{in:'SourceGraphic'},fm);
+  // turn separators
+  let pturn=null,ptx=HF_X0;
+  for(const p of pos){if(pturn!==null&&p.turn!==pturn){const lx=(ptx+p.x)/2;mk('line',{x1:lx,y1:14,x2:lx,y2:maxY-6,stroke:'#30363d','stroke-width':0.5,'stroke-opacity':0.7},svg);}ptx=p.x;pturn=p.turn;}
+  // rails
+  for(const lane of Object.values(lanes)){mk('line',{x1:82,y1:lane.y,x2:maxX-10,y2:lane.y,stroke:lane.lineColor,'stroke-opacity':0.22,'stroke-width':1.5,'stroke-dasharray':'3,4'},svg);}
+  // lane labels
+  for(const lane of Object.values(lanes)){const t=mk('text',{x:4,y:lane.y+4,'font-family':'ui-monospace,monospace','font-size':8.5,fill:lane.lineColor,'fill-opacity':0.8},svg);t.textContent=lane.label;}
+  // same-lane connectors
+  for(let i=1;i<pos.length;i++){const a=pos[i-1],b=pos[i];if(a.lane!==b.lane||a.type==='spawn')continue;mk('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:(lanes[a.lane]||lanes.main).lineColor,'stroke-opacity':0.35,'stroke-width':1.5},svg);}
+  // spawn beziers
+  for(const sp of pos.filter(p=>p.spawnLane&&lanes[p.spawnLane])){const agY=lanes[sp.spawnLane].y;const af=pos.find(p=>p.lane===sp.spawnLane&&p.x>=sp.x);if(!af)continue;const cx=sp.x+(af.x-sp.x)*0.45;mk('path',{d:`M${sp.x},${sp.y} C${cx},${sp.y} ${cx},${agY} ${af.x},${agY}`,stroke:'#d2a8ff','stroke-opacity':0.5,'stroke-width':1.5,fill:'none','stroke-dasharray':'4,2'},svg);}
+  // dots
+  const tip=document.getElementById('hf-tip');
+  for(const p of pos){
+    const tc=HF_TYPE[p.type]||HF_TYPE.tool;
+    let el;
+    if(tc.shape==='diamond'){const s=tc.r;el=mk('polygon',{points:`${p.x},${p.y-s} ${p.x+s},${p.y} ${p.x},${p.y+s} ${p.x-s},${p.y}`,fill:tc.color,opacity:0.9,style:'cursor:pointer'},svg);}
+    else{el=mk('circle',{cx:p.x,cy:p.y,r:tc.r,fill:tc.color,opacity:0.85,style:'cursor:pointer'},svg);}
+    el.addEventListener('mouseenter',()=>{
+      if(tc.shape==='circle')el.setAttribute('r',tc.r+2);
+      el.setAttribute('filter','url(#hfglow)');
+      tip.querySelector('.t-type').textContent=p.type.toUpperCase();
+      tip.querySelector('.t-type').style.color=tc.color;
+      tip.querySelector('.t-lbl').textContent=p.label;
+      const te=tip.querySelector('.t-tok');
+      if(p.tok!=null){te.textContent='🪙 '+fmtK(p.tok)+' tokens';te.style.display='block';}else te.style.display='none';
+      tip.style.display='block';
+    });
+    el.addEventListener('mousemove',ev=>{tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY-10)+'px';});
+    el.addEventListener('mouseleave',()=>{if(tc.shape==='circle')el.setAttribute('r',tc.r);el.removeAttribute('filter');tip.style.display='none';});
+  }
+}
+
+function buildHFTurns(events, subagents, agentCalls) {
+  const toolToSub={};
+  const usedSubs2=new Set();
+  for(const ac of agentCalls){
+    const sub=subagents.find(s=>!usedSubs2.has(s.agent_id)&&s.agent_type===ac.subagent&&(s.description||'').slice(0,80)===(ac.description||'').slice(0,80));
+    if(sub){toolToSub[ac.tool_use_id]={...sub,agType:ac.subagent};usedSubs2.add(sub.agent_id);}
+  }
+  const turns=[],stack=[];
+  let cur=null;
+  for(const e of events){
+    if(e.kind==='user'){if(cur)turns.push(cur);cur={userText:e.detail||'',time:e.t,items:[]};}
+    else{if(!cur)cur={userText:'',time:e.t,items:[]};
+      if(e.kind==='slash_command'||e.kind==='skill')cur.items.push({type:'skill',label:e.label,detail:e.detail});
+      else if(e.kind==='agent')cur.items.push({type:'agent',label:e.label,detail:e.detail,sub:toolToSub[e.tool_use_id]});
+      else if(e.kind==='tool')cur.items.push({type:'tool',name:e.label,detail:e.detail,tokens:e.tokens});}
+  }
+  if(cur)turns.push(cur);
+  return turns;
+}
+
+function hfRenderTurnItem(item) {
+  if(item.type==='skill'){
+    return `<div class="hf-skill-ev"><span style="color:var(--good)">⚡</span><span style="color:var(--good);font-weight:600;font-family:monospace">${escapeHtml(item.label)}</span>${item.detail?`<span style="color:var(--muted);font-size:11px">→ ${escapeHtml((item.detail).slice(0,80))}</span>`:''}</div>`;
+  }
+  if(item.type==='agent'){
+    const sub=item.sub;
+    const agType=sub?.agType||(item.label||'').replace('agent: ','');
+    const toolEvs=(sub?.events||[]).filter(e=>e.kind==='tool').slice(0,10);
+    const u=sub?.usage||{};const ts=(u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0);
+    const inner=toolEvs.map(e=>`<div class="hf-trow hf-t-${escapeHtml(e.label)}"><span class="hf-tico">${HF_ICON[hfToolType(e.label)]||'🔧'}</span><span class="hf-tname">${escapeHtml(e.label||'')}</span><span class="hf-tdetail">${escapeHtml((e.detail||'').slice(0,60))}</span>${e.tokens?`<span class="hf-ttag">${fmtK(e.tokens)}</span>`:''}</div>`).join('');
+    const more=(sub?.events||[]).filter(e=>e.kind==='tool').length>10?`<div style="font-size:10px;color:var(--muted);padding:3px 12px">+${(sub.events.filter(e=>e.kind==='tool').length-10)} more</div>`:'';
+    return `<div class="hf-ag-block"><div class="hf-ag-hdr"><span>🤖</span><span class="atype">${escapeHtml(agType)}</span><span class="adesc">${escapeHtml((item.detail||sub?.description||'').slice(0,60))}</span>${ts?`<span style="margin-left:auto;font-size:10px;color:var(--muted)">${fmtK(ts)} tok</span>`:''}</div><div class="hf-ag-inner">${inner}${more}</div></div>`;
+  }
+  if(item.type==='tool'){
+    const t=hfToolType(item.name);
+    return `<div class="hf-trow hf-t-${escapeHtml(item.name||'')}"><span class="hf-tico">${HF_ICON[t]||'🔧'}</span><span class="hf-tname">${escapeHtml(item.name||'')}</span><span class="hf-tdetail">${escapeHtml((item.detail||'').slice(0,70))}</span>${item.tokens?`<span class="hf-ttag">${fmtK(item.tokens)}</span>`:''}</div>`;
+  }
+  return '';
+}
+
+function hfBuildRefs(events) {
+  const files={};
+  for(const e of events){
+    if(e.kind!=='tool')continue;
+    const n=e.label||'';
+    if(!['Read','Edit','Write'].includes(n))continue;
+    const d=(e.detail||'').split('\n')[0].trim().slice(0,80);
+    if(!d||d.length<3)continue;
+    if(!files[d])files[d]={r:0,e:0,w:0};
+    if(n==='Read')files[d].r++;else if(n==='Edit')files[d].e++;else if(n==='Write')files[d].w++;
+  }
+  return files;
+}
+
+function hfRenderRefs(refs) {
+  const entries=Object.entries(refs).slice(0,20);
+  if(!entries.length)return '<div style="font-size:11px;color:var(--muted)">no file refs</div>';
+  return entries.map(([path,ops])=>{
+    const ops2=[];
+    if(ops.r)ops2.push(`<span class="hf-ref-op r">R×${ops.r}</span>`);
+    if(ops.e)ops2.push(`<span class="hf-ref-op e">E×${ops.e}</span>`);
+    if(ops.w)ops2.push(`<span class="hf-ref-op w">W×${ops.w}</span>`);
+    const short=path.replace(/^.*\//,'').slice(0,28)||path.slice(0,28);
+    return `<div class="hf-ref-item" title="${escapeHtml(path)}"><span class="hf-ref-path">${escapeHtml(short)}</span><div class="hf-ref-ops">${ops2.join('')}</div></div>`;
+  }).join('');
+}
+
+function hfToggleTurn(id){const el=document.getElementById(id);if(el)el.classList.toggle('hf-collapsed');}
+function hfSetAll(col){document.querySelectorAll('.hf-turn').forEach(t=>col?t.classList.add('hf-collapsed'):t.classList.remove('hf-collapsed'));}
+function hfToggleSc(id){const el=document.getElementById(id);if(!el)return;el.classList.toggle('hf-sc-collapsed');const b=el.querySelector('.hf-col-btn');if(b)b.textContent=el.classList.contains('hf-sc-collapsed')?'▸':'▾';}
+function hfToggleFlowPanel(){const b=document.getElementById('hf-flow-body');const btn=document.getElementById('hf-flow-btn');if(!b)return;const h=b.style.display==='none';b.style.display=h?'':'none';if(btn)btn.textContent=h?'▾':'▸';}
+
+async function openDetail(sid) {
+  const modal = document.getElementById("modal");
+  const bg = document.getElementById("modal-bg");
+  modal.innerHTML = `<div class="empty">Loading...</div>`;
+  bg.classList.add("show");
+  const r = await fetch(`/api/sessions/${sid}`);
+  if (!r.ok) { modal.innerHTML = "Error loading session."; return; }
+  const d = await r.json();
+  const counts = d.msg_counts || {};
+  const tokens = d.usage_total || {};
+  const sumT = (tokens.input||0)+(tokens.output||0)+(tokens.cache_create||0)+(tokens.cache_read||0);
+  const tl = d.timeline || [];
+  const maxBucket = Math.max(...tl.map(b=>(b.in||0)+(b.out||0)+(b.cw||0)+(b.cr||0)),1);
+  const um = d.usage_main||{}, us = d.usage_subagents||{};
+  const mainT=(um.input||0)+(um.output||0)+(um.cache_create||0)+(um.cache_read||0);
+  const subT=(us.input||0)+(us.output||0)+(us.cache_create||0)+(us.cache_read||0);
+  const toolUsage=d.tool_usage||{}, toolCounts=d.tool_counts||{};
+  const allTools=Object.keys(toolUsage).map(n=>({name:n,count:toolCounts[n]||0,sum:(toolUsage[n].input||0)+(toolUsage[n].output||0)+(toolUsage[n].cache_create||0)+(toolUsage[n].cache_read||0)})).sort((a,b)=>b.sum-a.sum);
+  const maxTool=Math.max(...allTools.map(t=>t.sum),1);
+  const cwd = (d.cwd||"").replace(/^.*com~apple~CloudDocs\//,"…/");
+
+  // Build harness flow data
+  const evts = (d.events||[]).slice(0,300);
+  const subs = d.subagents||[];
+  const agCalls = d.agent_calls||[];
+  const {events:hfEvts, lanes:hfLanes} = buildHFEvents(evts, subs, agCalls);
+  const turns = buildHFTurns(evts, subs, agCalls);
+  const refs = hfBuildRefs(evts);
+
+  // Sidebar: subagent summary
+  const subSummaryHtml = subs.length ? subs.map(s=>{
+    const u=s.usage;const ts=(u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0);
+    return `<div class="hf-ref-item"><span class="hf-ref-path" style="color:var(--opus)">${escapeHtml(s.agent_type)}</span><span style="font-size:10px;color:var(--muted);flex-shrink:0">${fmtK(ts)} tok</span></div>`;
+  }).join('') : '<div style="font-size:11px;color:var(--muted)">none</div>';
+
+  // Sidebar: skills
+  const skillsHtml = Object.keys(d.skill_counts||{}).length
+    ? Object.entries(d.skill_counts).sort((a,b)=>b[1]-a[1]).map(([k,c])=>
+        `<div class="hf-ref-item"><span class="hf-ref-path" style="color:var(--good)">/${escapeHtml(k)}</span><span style="font-size:10px;color:var(--muted);flex-shrink:0">${c}×</span></div>`
+      ).join('')
+    : '<div style="font-size:11px;color:var(--muted)">none</div>';
+
+  // Turn detail HTML
+  const turnDetailHtml = turns.length ? turns.map((turn,i)=>{
+    const tid=`hf-t-${sid.slice(0,6)}-${i}`;
+    const time=turn.time?new Date(turn.time).toLocaleTimeString():'';
+    const itemsHtml=turn.items.map(hfRenderTurnItem).join('');
+    return `
+      <div class="hf-turn" id="${tid}">
+        <div class="hf-turn-hdr" onclick="hfToggleTurn('${tid}')">
+          <div class="hf-turn-arrow">▾</div>
+          <div class="hf-turn-dot"></div>
+          <div class="hf-turn-text">${escapeHtml((turn.userText||'—').slice(0,120))}</div>
+          <div class="hf-turn-time">${time}</div>
+        </div>
+        <div class="hf-turn-body">${itemsHtml||'<div style="padding:8px 12px;font-size:11px;color:var(--muted)">no tool calls</div>'}</div>
+      </div>
+      <div class="hf-turn-conn"></div>`;
+  }).join('') : '<div class="empty">no turn data</div>';
+
+  modal.innerHTML = `
+    <span class="close" onclick="closeModal()">×</span>
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
+      <div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:3px;">${d.session_id}</div>
+        <div style="color:var(--muted);font-size:11px;font-family:ui-monospace,monospace;">${escapeHtml(cwd)}${d.git_branch?" · "+d.git_branch:""} · <span class="badge ${d.home||''}">${d.home}</span> · ${d.is_live?"🟢 live":"⚪ ended"}</div>
+      </div>
+    </div>
+
+    <div class="grid stats-grid" style="margin-bottom:12px;">
+      <div class="stat-card">
+        <div class="label">Tokens</div>
+        <div class="value">${fmtK(sumT)}</div>
+        <div class="sub">${fmtUsd(d.cost_usd)}</div>
+        <div class="breakdown">
+          <div><span>main</span><span>${fmtK(mainT)}</span></div>
+          <div><span>subagents</span><span>${fmtK(subT)}${subT?" ("+Math.round(100*subT/Math.max(sumT,1))+"%)":""}</span></div>
+          <div><span>input</span><span>${fmtK(tokens.input)}</span></div>
+          <div><span>output</span><span>${fmtK(tokens.output)}</span></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Messages</div>
+        <div class="value">${(counts.user||0)+(counts.assistant||0)}</div>
+        <div class="sub">user ${counts.user||0} · asst ${counts.assistant||0}</div>
+        <div class="breakdown">
+          <div><span>subagents</span><span>${subs.length} run, ${d.active_subagents||0} active</span></div>
+          <div><span>tool calls</span><span>${Object.values(toolCounts).reduce((a,b)=>a+b,0)}</span></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Activity</div>
+        <div class="value">${tl.length}m</div>
+        <div class="sub">first ${fmtTime(d.first_message_at)} · last ${fmtTime(d.last_message_at)}</div>
+        ${tl.length ? `<div class="timeline-bars" style="height:40px;margin-top:6px;">${tl.map(b=>{const v=(b.in||0)+(b.out||0)+(b.cw||0)+(b.cr||0);const h=Math.max(2,(v/maxBucket)*34);return `<div class="timeline-bar" style="height:${h}px" title="${fmtK(v)} tok"></div>`;}).join('')}</div>` : ''}
+      </div>
+    </div>
+
+    ${hfEvts.length ? `
+    <div class="hf-panel">
+      <div class="hf-panel-hdr">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <h4>🔀 Harness Flow <span style="font-weight:400;font-size:10px;">(hover → details · dot size = weight)</span></h4>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div class="hf-legend">
+            <span class="hf-li"><span class="hf-ld" style="background:#58a6ff"></span>user</span>
+            <span class="hf-li"><span class="hf-ld" style="background:#ffa657"></span>Bash</span>
+            <span class="hf-li"><span class="hf-ld" style="background:#79c0ff"></span>Read</span>
+            <span class="hf-li"><span class="hf-ld" style="background:#d2a8ff"></span>Edit</span>
+            <span class="hf-li"><span class="hf-ld" style="background:#d29922"></span>Write</span>
+            <span class="hf-li"><span class="hf-ld dia" style="background:#3fb950"></span>/skill</span>
+            <span class="hf-li"><span class="hf-ld dia" style="background:#d2a8ff"></span>Agent</span>
+          </div>
+          <button class="hf-col-btn" id="hf-flow-btn" onclick="hfToggleFlowPanel()">▾</button>
+        </div>
+      </div>
+      <div id="hf-flow-body">
+        <div class="hf-scroll" id="hf-svg-container"></div>
+      </div>
+    </div>` : ""}
+
+    <div class="hf-layout">
+      <div class="hf-flow-col">
+        <div class="hf-flow-ctrl">
+          <button onclick="hfSetAll(false)">▾ Expand all</button>
+          <button onclick="hfSetAll(true)">▸ Collapse all</button>
+        </div>
+        ${turnDetailHtml}
+        ${evts.length >= 300 ? `<div style="text-align:center;font-size:11px;color:var(--muted);padding:6px;border-top:1px solid var(--border);">… events truncated at 300 (${d.msg_counts?.user||0} user turns total)</div>` : ""}
+      </div>
+
+      <div class="hf-sidebar">
+        <div class="hf-sc-panel" id="hf-sc-refs">
+          <div class="hf-sc-hdr" onclick="hfToggleSc('hf-sc-refs')">
+            <h4>📂 References</h4>
+            <button class="hf-col-btn">▾</button>
+          </div>
+          <div class="hf-sc-body">${hfRenderRefs(refs)}</div>
+        </div>
+        <div class="hf-sc-panel" id="hf-sc-subs">
+          <div class="hf-sc-hdr" onclick="hfToggleSc('hf-sc-subs')">
+            <h4>🤖 Subagents (${subs.length})</h4>
+            <button class="hf-col-btn">▾</button>
+          </div>
+          <div class="hf-sc-body">${subSummaryHtml}</div>
+        </div>
+        <div class="hf-sc-panel" id="hf-sc-skills">
+          <div class="hf-sc-hdr" onclick="hfToggleSc('hf-sc-skills')">
+            <h4>⚡ Skills / Slash</h4>
+            <button class="hf-col-btn">▾</button>
+          </div>
+          <div class="hf-sc-body">${skillsHtml}</div>
+        </div>
+
+        ${allTools.length ? `
+        <div class="hf-sc-panel" id="hf-sc-tools">
+          <div class="hf-sc-hdr" onclick="hfToggleSc('hf-sc-tools')">
+            <h4>🔧 Tool Tokens</h4>
+            <button class="hf-col-btn">▾</button>
+          </div>
+          <div class="hf-sc-body" style="padding:6px 8px;">
+            ${allTools.map(t=>`<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;">
+              <span style="min-width:50px;font-family:monospace;color:var(--muted)">${escapeHtml(t.name)}</span>
+              <div style="flex:1;height:5px;background:var(--panel2);border-radius:2px;"><div style="height:100%;background:var(--accent);width:${Math.round(100*t.sum/maxTool)}%;border-radius:2px;opacity:0.6"></div></div>
+              <span style="color:var(--muted);min-width:42px;text-align:right">${fmtK(t.sum)}</span>
+            </div>`).join('')}
+          </div>
+        </div>` : ""}
+
+        ${Object.keys(d.model_usage||{}).length ? `
+        <div class="hf-sc-panel" id="hf-sc-models">
+          <div class="hf-sc-hdr" onclick="hfToggleSc('hf-sc-models')">
+            <h4>🧠 Models</h4>
+            <button class="hf-col-btn">▾</button>
+          </div>
+          <div class="hf-sc-body">
+            ${Object.entries(d.model_usage).map(([m,u])=>{const ts=(u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0);return `<div class="hf-ref-item"><span class="hf-ref-path"><span class="badge ${modelClass(m)}" style="font-size:9px">${m.replace('claude-','')}</span></span><span style="font-size:10px;color:var(--muted);flex-shrink:0">${fmtK(ts)}</span></div>`;}).join('')}
+          </div>
+        </div>` : ""}
+      </div>
+    </div>
+  `;
+
+  // Render SVG after DOM insert
+  if (hfEvts.length) {
+    const container = document.getElementById('hf-svg-container');
+    if (container) renderHFSvg(container, hfEvts, hfLanes);
+  }
+}
+
+function toggleMore(id) {
+  const more = document.getElementById(id + '-more');
+  const btn = document.getElementById(id + '-btn');
+  if (!more || !btn) return;
+  const isHidden = more.style.display === 'none';
+  more.style.display = isHidden ? '' : 'none';
+  const hidCount = more.querySelectorAll('.breakdown-row').length;
+  btn.textContent = isHidden ? '접기 ↑' : `+ ${hidCount}개 더 보기`;
+}
+
+function closeModal() {
+  document.getElementById("modal-bg").classList.remove("show");
+}
+
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentFilter = btn.dataset.filter;
+    renderSessions(lastSessions);
+  };
+});
+
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+// Manual refresh: load once on page open, re-fetch via button or browser reload.
+async function refresh() {
+  const pulse = document.getElementById("pulse");
+  const upd = document.getElementById("last-update");
+  pulse.style.background = "var(--warn)";
+  upd.textContent = "loading...";
+  try {
+    const [statsR, sessR] = await Promise.all([
+      fetch("/api/stats"),
+      fetch("/api/sessions"),
+    ]);
+    const stats = await statsR.json();
+    const sessions = await sessR.json();
+    _lastStats = stats;
+    renderPlan(stats.rolling_5h || {});
+    renderStats(stats.windows || {});
+    renderBreakdown(stats);
+    renderSessions(sessions || []);
+    upd.textContent = "loaded " + new Date().toLocaleTimeString() + " — click Refresh or reload page to update";
+    pulse.style.background = "var(--good)";
+  } catch (err) {
+    upd.textContent = "error: " + err.message;
+    pulse.style.background = "var(--danger)";
+  }
+}
+document.getElementById("refresh-btn").addEventListener("click", refresh);
+refresh();
+</script>
+</body>
+</html>
