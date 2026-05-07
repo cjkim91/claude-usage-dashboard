@@ -253,6 +253,7 @@ const fmtUsd = (n) => "$" + (n || 0).toFixed(2);
 const fmtTime = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
   const now = new Date();
   const diff = (now - d) / 1000;
   if (diff < 60) return Math.floor(diff) + "s ago";
@@ -280,10 +281,11 @@ const PLAN_LIMITS = {
 };
 
 function getPlan() {
-  const tier = localStorage.getItem("plan_tier") || "max5";
+  const raw = localStorage.getItem("plan_tier") || "max5";
+  const tier = PLAN_LIMITS[raw] ? raw : "max5";
   const customStr = localStorage.getItem("plan_custom_tokens");
   const custom = customStr ? parseInt(customStr) : null;
-  const limit = tier === "custom" ? custom : PLAN_LIMITS[tier].tokens;
+  const limit = tier === "custom" ? custom : (PLAN_LIMITS[tier]?.tokens ?? null);
   return { tier, limit };
 }
 
@@ -299,7 +301,7 @@ function renderPlan(rolling, planUsage) {
   if (official) {
     pct = Math.round(official.utilization);
     const overPct = official.utilization;
-    barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
+    barCls = overPct >= 100 ? "over" : overPct >= 90 ? "warn" : "";
     sourceLabel = `<span style="font-size:10px;color:#4ade80;opacity:0.8">● 어드민 실시간</span>`;
     if (official.resets_at) {
       const reset = new Date(official.resets_at);
@@ -320,7 +322,7 @@ function renderPlan(rolling, planUsage) {
     const tokens = (total.output||0) + (total.cache_create||0);
     pct = limit ? Math.min(100, Math.round(100 * tokens / limit)) : 0;
     const overPct = limit ? (100 * tokens / limit) : 0;
-    barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
+    barCls = overPct >= 100 ? "over" : overPct >= 90 ? "warn" : "";
     sourceLabel = `<span style="font-size:10px;color:var(--muted);opacity:0.6">~ JSONL 추정</span>`;
     if (rolling?.reset_at) {
       const reset = new Date(rolling.reset_at);
@@ -385,8 +387,9 @@ function renderBreakdown(stats) {
   const ags = stats.by_agent_skill || { subagents: {}, skills: {} };
   const totalT = (all.total?.input||0)+(all.total?.output||0)+(all.total?.cache_create||0)+(all.total?.cache_read||0);
 
-  // By model
+  // By model (exclude synthetic internal model)
   const models = Object.entries(all.by_model || {})
+    .filter(([m]) => m !== "<synthetic>")
     .map(([m, u]) => ({ m, sum: (u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0) }))
     .sort((a,b)=>b.sum-a.sum);
   const maxModel = Math.max(...models.map(x=>x.sum), 1);
@@ -440,7 +443,7 @@ function renderBreakdown(stats) {
       <h3>전체 — 모델별 토큰 <span style="font-size:10px;color:var(--muted)">(클릭→세션 목록)</span></h3>
       ${models.length ? models.map(x => `
         <div class="breakdown-row" style="cursor:pointer" onclick='openDrilldown("model","${escapeHtml(x.m)}")'>
-          <span class="label"><span class="badge ${modelClass(x.m)}">${x.m}</span></span>
+          <span class="label"><span class="badge ${modelClass(x.m)}">${escapeHtml(x.m)}</span></span>
           <div class="bar-wrap"><div class="bar" style="width:${100*x.sum/maxModel}%"></div></div>
           <span class="val">${fmtK(x.sum)} (${Math.round(100*x.sum/Math.max(totalT,1))}%)</span>
         </div>`).join("") : '<div class="empty">no data</div>'}
@@ -552,7 +555,7 @@ function renderStats(windows, sessions) {
       </div>
     </div>`;
 
-  grid.innerHTML = [...windowCards, liveCard].join("");
+  grid.innerHTML = [windowCards[0], liveCard, windowCards[1], windowCards[2]].join("");
 }
 
 function renderSessions(sessions) {
@@ -893,7 +896,7 @@ async function openDetail(sid) {
       </div>
     </div>
 
-    <div class="grid stats-grid" style="margin-bottom:12px;">
+    <div class="grid stats-grid" style="margin-bottom:12px;grid-template-columns:repeat(3,1fr);">
       <div class="stat-card">
         <div class="label">Tokens</div>
         <div class="value">${fmtK(sumT)}</div>
@@ -1001,7 +1004,7 @@ async function openDetail(sid) {
             <button class="hf-col-btn">▾</button>
           </div>
           <div class="hf-sc-body">
-            ${Object.entries(d.model_usage).map(([m,u])=>{const ts=(u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0);return `<div class="hf-ref-item"><span class="hf-ref-path"><span class="badge ${modelClass(m)}" style="font-size:9px">${m.replace('claude-','')}</span></span><span style="font-size:10px;color:var(--muted);flex-shrink:0">${fmtK(ts)}</span></div>`;}).join('')}
+            ${Object.entries(d.model_usage).filter(([m])=>m!=='<synthetic>').map(([m,u])=>{const ts=(u.input||0)+(u.output||0)+(u.cache_create||0)+(u.cache_read||0);return `<div class="hf-ref-item"><span class="hf-ref-path"><span class="badge ${modelClass(m)}" style="font-size:9px">${escapeHtml(m.replace('claude-',''))}</span></span><span style="font-size:10px;color:var(--muted);flex-shrink:0">${fmtK(ts)}</span></div>`;}).join('')}
           </div>
         </div>` : ""}
       </div>

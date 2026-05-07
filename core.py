@@ -1039,6 +1039,9 @@ def list_sessions_enriched(limit: int = 50) -> list[dict]:
 
 def session_detail(session_id: str) -> dict | None:
     """Find session JSONL by id and return full parsed info plus live meta if any."""
+    import re as _re
+    if not _re.fullmatch(r"[a-f0-9\-]{8,64}", session_id):
+        return None
     live = None
     for s in list_live_sessions():
         if s.get("sessionId") == session_id:
