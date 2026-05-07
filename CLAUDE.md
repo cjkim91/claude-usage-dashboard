@@ -38,9 +38,11 @@ static/index.html  단일 파일 UI (vanilla JS, 다크 테마)
 - **tool token attribution**: 한 assistant 메시지에 여러 tool_use → 균등 분배 (근사)
 - **새로고침**: SSE 제거, 버튼/reload 시에만 fetch (토큰 절약)
 - **플랜 한도**: 정확한 token limit은 API 헤더에만 있어 로컬 미저장. 5h rolling 실사용량 + 추정 한도 dropdown으로 대체
+- **rolling window 타임스탬프**: `rolling_5h_usage()`는 raw JSONL을 직접 스캔 (버킷 없음). user 메시지 타임스탬프(≈ 요청 시각)를 `first_msg_in_window`로 사용.
 
 ## 알려진 한계
 
 - 플랜 한도값은 추정치 (Pro ~7M / Max 5x ~35M / Max 20x ~140M tokens per 5h — 비공식)
 - tool token attribution은 근사값
+- **어드민과 재설정 시간 불일치**: JSONL은 응답 완료 기록만 저장. 취소된 요청(중간에 Ctrl+C 등)이나 claude.ai 웹클라이언트 요청은 Anthropic은 과금하지만 로컬에 기록 안 됨 → 수 분 오차 불가피. 보정 불가능.
 - burn rate / ETA 미구현

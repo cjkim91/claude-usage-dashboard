@@ -35,6 +35,7 @@ def api_stats():
         "by_agent_skill": core.aggregate_by_subagent_and_skill(),
         "by_model": core.aggregate_by_model(),
         "rolling_5h": core.rolling_5h_usage(),
+        "plan_usage": core.fetch_oauth_usage(),  # official utilization from Anthropic (may be None)
     })
 
 

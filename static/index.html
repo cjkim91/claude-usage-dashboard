@@ -269,9 +269,7 @@ const modelClass = (m) => {
 let currentFilter = "all";
 let lastSessions = [];
 
-// Plan tier limits — measured as output + cache_write tokens per 5h rolling window.
-// Anthropic excludes cache_read (no compute) and input from plan limits.
-// These limits are unofficial estimates; calibrate via Custom if needed.
+// Plan tier limits — output + cache_write tokens per 5h rolling window (unofficial estimates).
 const PLAN_LIMITS = {
   "pro":     { name: "Pro",       tokens: 7_000_000 },
   "max5":    { name: "Max (5x)",  tokens: 35_000_000 },
@@ -287,34 +285,64 @@ function getPlan() {
   return { tier, limit };
 }
 
-function renderPlan(rolling) {
+function renderPlan(rolling, planUsage) {
   const card = document.getElementById("plan-card");
   const { tier, limit } = getPlan();
-  const total = rolling?.total || {};
-  // Anthropic plan limits count output + cache_write only (cache_read excluded — no compute)
-  const tokens = (total.output||0) + (total.cache_create||0);
-  const tokensAll = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
-  const pct = limit ? Math.min(100, Math.round(100 * tokens / limit)) : 0;
-  const overPct = limit ? (100 * tokens / limit) : 0;
-  const barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
 
-  let resetText = "—";
-  if (rolling?.reset_at) {
-    const reset = new Date(rolling.reset_at);
-    const now = new Date();
-    const diffMs = reset - now;
-    if (diffMs > 0) {
-      const h = Math.floor(diffMs / 3600000);
-      const m = Math.floor((diffMs % 3600000) / 60000);
-      resetText = (h ? h + "시간 " : "") + m + "분 후 재설정";
+  // Official utilization from Anthropic OAuth API (preferred)
+  const official = planUsage?.five_hour;
+
+  let pct, resetText, sourceLabel, barCls;
+
+  if (official) {
+    pct = Math.round(official.utilization);
+    const overPct = official.utilization;
+    barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
+    sourceLabel = `<span style="font-size:10px;color:#4ade80;opacity:0.8">● 어드민 실시간</span>`;
+    if (official.resets_at) {
+      const reset = new Date(official.resets_at);
+      const diffMs = reset - Date.now();
+      if (diffMs > 0) {
+        const h = Math.floor(diffMs / 3600000);
+        const m = Math.floor((diffMs % 3600000) / 60000);
+        resetText = (h ? h + "시간 " : "") + m + "분 후 재설정";
+      } else {
+        resetText = "윈도우 만료 — 다음 메시지가 새 윈도우 시작";
+      }
     } else {
-      resetText = "윈도우 만료 — 다음 메시지가 새 윈도우 시작";
+      resetText = "—";
+    }
+  } else {
+    // Fallback: JSONL-based estimate
+    const total = rolling?.total || {};
+    const tokens = (total.output||0) + (total.cache_create||0);
+    pct = limit ? Math.min(100, Math.round(100 * tokens / limit)) : 0;
+    const overPct = limit ? (100 * tokens / limit) : 0;
+    barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
+    sourceLabel = `<span style="font-size:10px;color:var(--muted);opacity:0.6">~ JSONL 추정</span>`;
+    if (rolling?.reset_at) {
+      const reset = new Date(rolling.reset_at);
+      const diffMs = reset - Date.now();
+      if (diffMs > 0) {
+        const h = Math.floor(diffMs / 3600000);
+        const m = Math.floor((diffMs % 3600000) / 60000);
+        resetText = (h ? h + "시간 " : "") + m + "분 후 재설정";
+      } else {
+        resetText = "윈도우 만료 — 다음 메시지가 새 윈도우 시작";
+      }
+    } else {
+      resetText = "—";
     }
   }
 
+  const total = rolling?.total || {};
+  const tokensAll = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
+
   card.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:13px;color:var(--muted);">플랜 사용량 한도 (5시간 rolling)</div>
+      <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;">
+        플랜 사용량 (5시간 rolling) ${sourceLabel}
+      </div>
       <div>
         <select class="plan-select" id="plan-select">
           ${Object.entries(PLAN_LIMITS).map(([k, v]) =>
@@ -326,16 +354,15 @@ function renderPlan(rolling) {
     </div>
     <div class="plan-row">
       <div style="min-width:90px;font-size:14px;font-weight:600;">${pct}%</div>
-      <div class="plan-bar-wrap"><div class="plan-bar ${barCls}" style="width:${pct}%"></div></div>
+      <div class="plan-bar-wrap"><div class="plan-bar ${barCls}" style="width:${Math.min(pct,100)}%"></div></div>
       <div style="min-width:160px;text-align:right;font-size:11px;color:var(--muted);">
-        ${fmtK(tokens)} / ${limit ? fmtK(limit) : "—"}
-        <span style="font-size:10px;opacity:0.6"> (out+cw)</span>
+        ${official ? "" : `${fmtK((total.output||0)+(total.cache_create||0))} / ${limit ? fmtK(limit) : "—"}`}
       </div>
     </div>
     <div class="plan-meta">
       <span>📊 ${rolling?.msg_count||0} messages</span>
       <span>💵 ${fmtUsd(rolling?.cost_usd)}</span>
-      <span title="cache_read 제외 — Anthropic 한도 산정 방식">전체 ${fmtK(tokensAll)} <span style="opacity:.5">(cr 포함)</span></span>
+      <span title="전체 토큰 (cache_read 포함)">전체 ${fmtK(tokensAll)}</span>
       <span>⏱ ${resetText}</span>
     </div>
   `;
@@ -349,6 +376,7 @@ function renderPlan(rolling) {
     refresh();
   });
 }
+
 
 function renderBreakdown(stats) {
   const all = stats.windows?.all || { by_model: {}, total: {} };
@@ -996,7 +1024,7 @@ async function refresh() {
     const stats = await statsR.json();
     const sessions = await sessR.json();
     _lastStats = stats;
-    renderPlan(stats.rolling_5h || {});
+    renderPlan(stats.rolling_5h || {}, stats.plan_usage);
     renderStats(stats.windows || {});
     renderBreakdown(stats);
     renderSessions(sessions || []);

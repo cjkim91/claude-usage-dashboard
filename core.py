@@ -743,10 +743,92 @@ def aggregate_by_subagent_and_skill() -> dict:
     }
 
 
+_OAUTH_CACHE: dict = {}  # {"data": ..., "cached_at": float}
+_OAUTH_CACHE_TTL = 300  # 5 minutes — avoids 429s
+
+
+def _find_best_oauth_token() -> str | None:
+    """Scan all Claude Code-credentials-* keychain entries; return freshest non-expired token."""
+    import subprocess, re
+    try:
+        dump = subprocess.run(
+            ["security", "dump-keychain"],
+            capture_output=True, text=True, timeout=5
+        ).stdout
+        services = re.findall(r'"svce"<blob>="(Claude Code-credentials[^"]*)"', dump)
+        services = list(dict.fromkeys(services))  # deduplicate, preserve order
+    except Exception:
+        services = ["Claude Code-credentials"]
+
+    best_tok: str | None = None
+    best_exp: float = 0.0
+    now_ts = time.time()
+
+    for svc in services:
+        try:
+            raw = subprocess.run(
+                ["security", "find-generic-password", "-s", svc, "-w"],
+                capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            d = json.loads(raw)
+            oauth = d.get("claudeAiOauth", {})
+            tok = oauth.get("accessToken", "")
+            exp_ms = oauth.get("expiresAt", 0) or 0
+            exp_s = exp_ms / 1000
+            if tok and exp_s > now_ts and exp_s > best_exp:
+                best_tok = tok
+                best_exp = exp_s
+        except Exception:
+            continue
+    return best_tok
+
+
+def fetch_oauth_usage() -> dict | None:
+    """Fetch official plan utilization from Anthropic's OAuth usage endpoint.
+
+    Returns {"five_hour": {"utilization": float, "resets_at": str}, ...} or None on failure.
+    Caches result for 5 minutes to avoid rate-limiting.
+    macOS-only (reads from keychain). Silently returns None on other platforms.
+    """
+    import platform
+    if platform.system() != "Darwin":
+        return None
+
+    now = time.time()
+    cached = _OAUTH_CACHE.get("data")
+    if cached and now - _OAUTH_CACHE.get("cached_at", 0) < _OAUTH_CACHE_TTL:
+        return cached
+
+    token = _find_best_oauth_token()
+    if not token:
+        return None
+
+    import urllib.request, urllib.error
+    req = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/usage",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "claude-code/2.1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read())
+        _OAUTH_CACHE["data"] = data
+        _OAUTH_CACHE["cached_at"] = now
+        return data
+    except Exception:
+        return None
+
+
 def rolling_5h_usage() -> dict:
     """Token usage in the last 5 hours (Anthropic plan rolling window).
 
     Reset time = first message in the window + 5h.
+    Uses raw JSONL timestamps (ms precision) and user-message timestamps
+    (≈ API request time) for first_msg_in_window, which is closer to
+    what Anthropic's servers see than assistant-response timestamps.
     """
     now = datetime.now(timezone.utc)
     five_h_ago = now - timedelta(hours=5)
@@ -754,27 +836,50 @@ def rolling_5h_usage() -> dict:
     first_msg_in_window: datetime | None = None
     msg_count = 0
 
-    for s in list_all_sessions():
-        # Quick filter: skip sessions whose mtime is older than 5h
-        if datetime.fromtimestamp(s["mtime"], tz=timezone.utc) < five_h_ago:
-            continue
-        info = parse_session(Path(s["path"]))
-        for ev in info.get("timeline", []):
+    def _scan_jsonl(path: Path) -> None:
+        nonlocal first_msg_in_window, msg_count
+        for d in _iter_jsonl(path):
+            ts = d.get("timestamp")
+            if not ts:
+                continue
             try:
-                t = datetime.fromtimestamp(ev["t"], tz=timezone.utc)
+                t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             except Exception:
                 continue
             if t < five_h_ago:
                 continue
+            # Track earliest message of any type (user msg ≈ API request time)
             if first_msg_in_window is None or t < first_msg_in_window:
                 first_msg_in_window = t
-            msg_count += 1
-            model = (ev.get("models") or ["unknown"])[0]
-            u = by_model[model]
-            u.input += ev["in"]
-            u.output += ev["out"]
-            u.cache_create += ev["cw"]
-            u.cache_read += ev["cr"]
+            # Count tokens from assistant messages only
+            if d.get("type") == "assistant":
+                msg = d.get("message", {}) or {}
+                model = _normalize_model(msg.get("model"))
+                usage = msg.get("usage", {}) or {}
+                u = by_model[model]
+                u.input += usage.get("input_tokens", 0) or 0
+                u.output += usage.get("output_tokens", 0) or 0
+                u.cache_create += usage.get("cache_creation_input_tokens", 0) or 0
+                u.cache_read += usage.get("cache_read_input_tokens", 0) or 0
+                msg_count += 1
+
+    for s in list_all_sessions():
+        # Quick filter: skip sessions whose mtime is older than 5h
+        if datetime.fromtimestamp(s["mtime"], tz=timezone.utc) < five_h_ago:
+            continue
+        path = Path(s["path"])
+        _scan_jsonl(path)
+        # Also scan subagent JSOLs
+        sub_dir = path.with_suffix("") / "subagents"
+        if sub_dir.exists():
+            for sub_jsonl in sorted(sub_dir.glob("agent-*.jsonl")):
+                try:
+                    sub_mtime = sub_jsonl.stat().st_mtime
+                except FileNotFoundError:
+                    continue
+                if datetime.fromtimestamp(sub_mtime, tz=timezone.utc) < five_h_ago:
+                    continue
+                _scan_jsonl(sub_jsonl)
 
     by_model_d = {k: asdict(v) for k, v in by_model.items()}
     total = Usage()
