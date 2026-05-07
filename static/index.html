@@ -34,7 +34,7 @@
   .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--good); animation: pulse 1.5s infinite; vertical-align: middle; margin-right: 6px;}
   @keyframes pulse { 0%, 100% { opacity: 1;} 50% { opacity: 0.3; }}
   .grid { display: grid; gap: 12px; }
-  .stats-grid { grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; }
+  .stats-grid { grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; }
   .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
   .stat-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -85,6 +85,8 @@
   .section { margin-top: 16px; }
   .section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .empty { color: var(--muted); font-style: italic; padding: 12px; text-align: center; }
+  .sess-tok-bar-wrap { height: 3px; background: var(--panel2); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .sess-tok-bar { height: 100%; background: var(--accent); opacity: 0.55; border-radius: 2px; transition: width 0.3s; }
   .controls { display: flex; gap: 8px; align-items: center; }
   button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
   button:hover { border-color: var(--accent); }
@@ -508,10 +510,10 @@ function openDrilldown(type, key) {
   bg.classList.add("show");
 }
 
-function renderStats(windows) {
+function renderStats(windows, sessions) {
   const grid = document.getElementById("stats-grid");
   const labels = { today: "Today", week: "This Week", all: "All Time" };
-  grid.innerHTML = Object.entries(labels).map(([key, label]) => {
+  const windowCards = Object.entries(labels).map(([key, label]) => {
     const w = windows[key] || { total: {}, by_model: {}, cost_usd: 0 };
     const t = w.total || {};
     const sumTokens = (t.input||0)+(t.output||0)+(t.cache_create||0)+(t.cache_read||0);
@@ -528,7 +530,29 @@ function renderStats(windows) {
           <div><span>cache read</span><span>${fmtK(t.cache_read)}</span></div>
         </div>
       </div>`;
-  }).join("");
+  });
+
+  const allSessions = sessions || [];
+  const liveList = allSessions.filter(s => s.is_live);
+  const liveCount = liveList.length;
+  const busyCount = liveList.filter(s => s.active_subagents > 0 || s.status === "busy").length;
+  const idleCount = liveCount - busyCount;
+  const workLive = liveList.filter(s => s.home === "work").length;
+  const personalLive = liveList.filter(s => s.home === "personal").length;
+  const liveCard = `
+    <div class="stat-card">
+      <div class="label">Live Now</div>
+      <div class="value" style="color:${liveCount > 0 ? "var(--good)" : "var(--muted)"};">${liveCount} <span style="font-size:13px;color:var(--muted);">active</span></div>
+      <div class="sub">${allSessions.length} sessions total</div>
+      <div class="breakdown">
+        ${busyCount ? `<div><span>⚡ busy</span><span>${busyCount}</span></div>` : ""}
+        <div><span>○ idle</span><span>${idleCount}</span></div>
+        ${workLive ? `<div><span style="color:var(--work)">work</span><span>${workLive}</span></div>` : ""}
+        ${personalLive ? `<div><span style="color:var(--personal)">personal</span><span>${personalLive}</span></div>` : ""}
+      </div>
+    </div>`;
+
+  grid.innerHTML = [...windowCards, liveCard].join("");
 }
 
 function renderSessions(sessions) {
@@ -549,9 +573,13 @@ function renderSessions(sessions) {
     return;
   }
 
+  const maxTokens = Math.max(...filtered.map(s =>
+    (s.usage_total?.input||0)+(s.usage_total?.output||0)+(s.usage_total?.cache_create||0)+(s.usage_total?.cache_read||0)
+  ), 1);
+
   list.innerHTML = filtered.map(s => {
     const tokens = (s.usage_total?.input||0)+(s.usage_total?.output||0)+(s.usage_total?.cache_create||0)+(s.usage_total?.cache_read||0);
-    const models = Object.keys(s.model_usage || {});
+    const models = Object.keys(s.model_usage || {}).filter(m => m !== "<synthetic>");
     const cwd = s.cwd ? s.cwd.replace(/^.*com~apple~CloudDocs\//, "…/") : "—";
     const snippet = s.last_assistant_text || s.last_user_text || s.first_user_text || "";
     const lastTool = s.last_tool_use ? s.last_tool_use.name : null;
@@ -561,13 +589,14 @@ function renderSessions(sessions) {
     const mainT = (um.input||0)+(um.output||0)+(um.cache_create||0)+(um.cache_read||0);
     const subT = (us.input||0)+(us.output||0)+(us.cache_create||0)+(us.cache_read||0);
     const subPct = tokens > 0 ? Math.round(100 * subT / tokens) : 0;
+    const barPct = Math.round(100 * tokens / maxTokens);
     return `
       <div class="session ${s.is_live ? "live" : ""}" onclick="openDetail('${s.session_id}')">
         <div class="session-header">
           <div class="badges">
             ${s.is_live ? `<span class="badge live">● LIVE${s.status === "busy" ? " busy" : ""}</span>` : ""}
             <span class="badge ${s.home}">${s.home}</span>
-            ${models.map(m => `<span class="badge ${modelClass(m)}">${m.replace("claude-","")}</span>`).join("")}
+            ${models.map(m => `<span class="badge ${modelClass(m)}">${escapeHtml(m.replace("claude-",""))}</span>`).join("")}
             ${s.subagents_count ? `<span class="badge">🤖 ${s.subagents_count} sub${s.subagents_count>1?"s":""}</span>` : ""}
             ${s.active_subagents ? `<span class="badge busy">⚡ ${s.active_subagents} running</span>` : ""}
           </div>
@@ -583,6 +612,7 @@ function renderSessions(sessions) {
           ${lastTool ? `<span>🔧 last: <b>${lastTool}</b></span>` : ""}
           ${s.pid ? `<span>PID <b>${s.pid}</b></span>` : ""}
         </div>
+        <div class="sess-tok-bar-wrap"><div class="sess-tok-bar" style="width:${barPct}%"></div></div>
       </div>`;
   }).join("");
 }
@@ -1025,7 +1055,7 @@ async function refresh() {
     const sessions = await sessR.json();
     _lastStats = stats;
     renderPlan(stats.rolling_5h || {}, stats.plan_usage);
-    renderStats(stats.windows || {});
+    renderStats(stats.windows || {}, sessions || []);
     renderBreakdown(stats);
     renderSessions(sessions || []);
     upd.textContent = "loaded " + new Date().toLocaleTimeString() + " — click Refresh or reload page to update";
