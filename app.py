@@ -1,14 +1,26 @@
-"""FastAPI dashboard server. Reads ~/.claude and ~/.claude-personal locally.
+"""FastAPI dashboard server. Reads Claude Code local files — no API calls.
 
 Run:
     pip install -r requirements.txt
-    python app.py
-    # open http://localhost:8765
+    python app.py        # → http://localhost:8765
+
+Config (optional .env or env vars):
+    CLAUDE_HOMES=label:~/path,label:~/path   # override auto-detected paths
+    PORT=8765                                 # default port
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+# Load .env before importing core (HOMES is resolved at import time)
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -35,7 +47,8 @@ def api_stats():
         "by_agent_skill": core.aggregate_by_subagent_and_skill(),
         "by_model": core.aggregate_by_model(),
         "rolling_5h": core.rolling_5h_usage(),
-        "plan_usage": core.fetch_oauth_usage(),  # official utilization from Anthropic (may be None)
+        "plan_usage": core.fetch_oauth_usage(),
+        "homes": core.homes_info(),
     })
 
 

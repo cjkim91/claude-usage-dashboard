@@ -35,6 +35,13 @@
   @keyframes pulse { 0%, 100% { opacity: 1;} 50% { opacity: 0.3; }}
   .grid { display: grid; gap: 12px; }
   .stats-grid { grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; }
+  .main-stats-layout { display:grid; grid-template-columns:180px 1fr 1fr 1fr 170px; gap:12px; margin-bottom:16px; align-items:stretch; }
+  .stacked-col { display:flex; flex-direction:column; gap:12px; }
+  .stacked-col .stat-card { flex:1; }
+  .plan-v { display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+  .homes-card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px 14px; overflow:hidden; }
+  .home-entry { padding:7px 0; border-bottom:1px solid var(--border); }
+  .home-entry:last-child { border-bottom:none; }
   .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
   .stat-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -215,9 +222,16 @@
     </div>
   </div>
 
-  <div class="plan-card" id="plan-card"></div>
-
-  <div class="grid stats-grid" id="stats-grid"></div>
+  <div class="main-stats-layout">
+    <div class="plan-v" id="plan-card"></div>
+    <div class="stacked-col">
+      <div class="stat-card" id="today-card"></div>
+      <div class="stat-card" id="livenow-card"></div>
+    </div>
+    <div class="stat-card" id="week-card"></div>
+    <div class="stat-card" id="alltime-card"></div>
+    <div class="homes-card" id="homes-card"></div>
+  </div>
 
   <div class="breakdown-section" id="breakdown-section"></div>
 
@@ -343,31 +357,26 @@ function renderPlan(rolling, planUsage) {
   const tokensAll = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
 
   card.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;">
-        플랜 사용량 (5시간 rolling) ${sourceLabel}
-      </div>
-      <div>
-        <select class="plan-select" id="plan-select">
-          ${Object.entries(PLAN_LIMITS).map(([k, v]) =>
-            `<option value="${k}" ${k===tier?"selected":""}>${v.name}${v.tokens?" — "+fmtK(v.tokens):""}</option>`
-          ).join("")}
-        </select>
-        ${tier === "custom" ? `<input type="number" id="plan-custom" value="${limit||""}" placeholder="tokens" style="margin-left:6px;width:120px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:12px;" />` : ""}
-      </div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">플랜 사용량 (5h)</div>
+    <div style="margin-bottom:10px;">${sourceLabel}</div>
+    <div style="font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;margin-bottom:8px;">${pct}%</div>
+    <div class="plan-bar-wrap" style="height:8px;border-radius:4px;margin-bottom:12px;">
+      <div class="plan-bar ${barCls}" style="width:${Math.min(pct,100)}%;border-radius:4px;"></div>
     </div>
-    <div class="plan-row">
-      <div style="min-width:90px;font-size:14px;font-weight:600;">${pct}%</div>
-      <div class="plan-bar-wrap"><div class="plan-bar ${barCls}" style="width:${Math.min(pct,100)}%"></div></div>
-      <div style="min-width:160px;text-align:right;font-size:11px;color:var(--muted);">
-        ${official ? "" : `${fmtK((total.output||0)+(total.cache_create||0))} / ${limit ? fmtK(limit) : "—"}`}
-      </div>
-    </div>
-    <div class="plan-meta">
-      <span>📊 ${rolling?.msg_count||0} messages</span>
+    <div style="display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);flex:1;">
+      <span>📊 ${rolling?.msg_count||0} msg</span>
       <span>💵 ${fmtUsd(rolling?.cost_usd)}</span>
-      <span title="전체 토큰 (cache_read 포함)">전체 ${fmtK(tokensAll)}</span>
-      <span>⏱ ${resetText}</span>
+      <span>전체 ${fmtK(tokensAll)}</span>
+      <span style="${barCls==='over'?'color:var(--danger)':barCls==='warn'?'color:var(--warn)':''}">⏱ ${resetText}</span>
+      ${!official ? `<span style="color:var(--muted);font-size:10px;">${fmtK((total.output||0)+(total.cache_create||0))} / ${limit?fmtK(limit):"—"}</span>` : ""}
+    </div>
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+      <select class="plan-select" id="plan-select" style="width:100%;font-size:11px;">
+        ${Object.entries(PLAN_LIMITS).map(([k,v])=>
+          `<option value="${k}" ${k===tier?"selected":""}>${v.name}${v.tokens?" — "+fmtK(v.tokens):""}</option>`
+        ).join("")}
+      </select>
+      ${tier==="custom"?`<input type="number" id="plan-custom" value="${limit||""}" placeholder="tokens" style="margin-top:4px;width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;"/>`:""}
     </div>
   `;
   document.getElementById("plan-select").addEventListener("change", e => {
@@ -513,49 +522,77 @@ function openDrilldown(type, key) {
   bg.classList.add("show");
 }
 
-function renderStats(windows, sessions) {
-  const grid = document.getElementById("stats-grid");
-  const labels = { today: "Today", week: "This Week", all: "All Time" };
-  const windowCards = Object.entries(labels).map(([key, label]) => {
+function renderStats(windows, sessions, homes) {
+  // Window stat cards
+  const windowMap = { today: "today-card", week: "week-card", all: "alltime-card" };
+  const windowLabels = { today: "Today", week: "This Week", all: "All Time" };
+  for (const [key, id] of Object.entries(windowMap)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
     const w = windows[key] || { total: {}, by_model: {}, cost_usd: 0 };
     const t = w.total || {};
     const sumTokens = (t.input||0)+(t.output||0)+(t.cache_create||0)+(t.cache_read||0);
-    const models = Object.keys(w.by_model || {});
-    return `
-      <div class="stat-card">
-        <div class="label">${label}</div>
-        <div class="value">${fmtK(sumTokens)} <span style="font-size:13px;color:var(--muted);">tokens</span></div>
-        <div class="sub">${fmtUsd(w.cost_usd)} · ${models.length} models</div>
-        <div class="breakdown">
-          <div><span>input</span><span>${fmtK(t.input)}</span></div>
-          <div><span>output</span><span>${fmtK(t.output)}</span></div>
-          <div><span>cache write</span><span>${fmtK(t.cache_create)}</span></div>
-          <div><span>cache read</span><span>${fmtK(t.cache_read)}</span></div>
-        </div>
+    const models = Object.keys(w.by_model || {}).filter(m => m !== "<synthetic>");
+    el.innerHTML = `
+      <div class="label">${windowLabels[key]}</div>
+      <div class="value">${fmtK(sumTokens)} <span style="font-size:13px;color:var(--muted);">tokens</span></div>
+      <div class="sub">${fmtUsd(w.cost_usd)} · ${models.length} models</div>
+      <div class="breakdown">
+        <div><span>input</span><span>${fmtK(t.input)}</span></div>
+        <div><span>output</span><span>${fmtK(t.output)}</span></div>
+        <div><span>cache write</span><span>${fmtK(t.cache_create)}</span></div>
+        <div><span>cache read</span><span>${fmtK(t.cache_read)}</span></div>
       </div>`;
-  });
+  }
 
-  const allSessions = sessions || [];
-  const liveList = allSessions.filter(s => s.is_live);
-  const liveCount = liveList.length;
-  const busyCount = liveList.filter(s => s.active_subagents > 0 || s.status === "busy").length;
-  const idleCount = liveCount - busyCount;
-  const workLive = liveList.filter(s => s.home === "work").length;
-  const personalLive = liveList.filter(s => s.home === "personal").length;
-  const liveCard = `
-    <div class="stat-card">
+  // Live Now card
+  const liveEl = document.getElementById("livenow-card");
+  if (liveEl) {
+    const allSessions = sessions || [];
+    const liveList = allSessions.filter(s => s.is_live);
+    const liveCount = liveList.length;
+    const busyCount = liveList.filter(s => s.active_subagents > 0 || s.status === "busy").length;
+    const idleCount = liveCount - busyCount;
+    const workLive = liveList.filter(s => s.home === "work").length;
+    const personalLive = liveList.filter(s => s.home === "personal").length;
+    liveEl.innerHTML = `
       <div class="label">Live Now</div>
-      <div class="value" style="color:${liveCount > 0 ? "var(--good)" : "var(--muted)"};">${liveCount} <span style="font-size:13px;color:var(--muted);">active</span></div>
+      <div class="value" style="color:${liveCount>0?"var(--good)":"var(--muted)"};">${liveCount} <span style="font-size:13px;color:var(--muted);">active</span></div>
       <div class="sub">${allSessions.length} sessions total</div>
       <div class="breakdown">
-        ${busyCount ? `<div><span>⚡ busy</span><span>${busyCount}</span></div>` : ""}
+        ${busyCount?`<div><span>⚡ busy</span><span>${busyCount}</span></div>`:""}
         <div><span>○ idle</span><span>${idleCount}</span></div>
-        ${workLive ? `<div><span style="color:var(--work)">work</span><span>${workLive}</span></div>` : ""}
-        ${personalLive ? `<div><span style="color:var(--personal)">personal</span><span>${personalLive}</span></div>` : ""}
-      </div>
-    </div>`;
+        ${workLive?`<div><span style="color:var(--work)">work</span><span>${workLive}</span></div>`:""}
+        ${personalLive?`<div><span style="color:var(--personal)">personal</span><span>${personalLive}</span></div>`:""}
+      </div>`;
+  }
 
-  grid.innerHTML = [windowCards[0], liveCard, windowCards[1], windowCards[2]].join("");
+  // Homes card
+  renderHomes(homes || []);
+}
+
+function renderHomes(homes) {
+  const el = document.getElementById("homes-card");
+  if (!el) return;
+  const LABEL_COLOR = { work: "var(--work)", personal: "var(--personal)", claude: "var(--accent)" };
+  el.innerHTML = `
+    <div class="label" style="margin-bottom:8px;">HOMES</div>
+    ${homes.length ? homes.map(h => {
+      const color = LABEL_COLOR[h.label] || "var(--accent)";
+      return `
+        <div class="home-entry">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
+            <span style="font-weight:600;font-size:12px;">${escapeHtml(h.label)}</span>
+          </div>
+          <div style="font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);margin-bottom:4px;word-break:break-all;">${escapeHtml(h.home_display||h.path)}</div>
+          <div style="font-size:11px;color:var(--muted);display:flex;gap:10px;">
+            <span>📁 ${h.project_count}</span>
+            <span>📄 ${h.session_count}</span>
+          </div>
+        </div>`;
+    }).join("") : '<div style="color:var(--muted);font-size:11px;">감지된 홈 없음</div>'}
+  `;
 }
 
 function renderSessions(sessions) {
@@ -1058,7 +1095,7 @@ async function refresh() {
     const sessions = await sessR.json();
     _lastStats = stats;
     renderPlan(stats.rolling_5h || {}, stats.plan_usage);
-    renderStats(stats.windows || {}, sessions || []);
+    renderStats(stats.windows || {}, sessions || [], stats.homes || []);
     renderBreakdown(stats);
     renderSessions(sessions || []);
     upd.textContent = "loaded " + new Date().toLocaleTimeString() + " — click Refresh or reload page to update";

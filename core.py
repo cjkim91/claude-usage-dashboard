@@ -1,9 +1,8 @@
 """Parse Claude Code local data: sessions, projects (JSONL), todos.
 
-Config dirs:
-  ~/.claude-personal/  — cdp (personal) sessions
-  ~/.claude-work/      — cdw (work) sessions
-  ~/.claude/           — shared base config (no sessions here)
+Config dir detection order:
+  1. CLAUDE_HOMES env var: "label:~/path,label:~/path"  (explicit override)
+  2. Auto-detect: any ~/.claude* directory that contains a projects/ subdir
 
 Pure file I/O — no API calls.
 """
@@ -40,10 +39,59 @@ def _normalize_model(m: str) -> str:
     return base
 
 
-HOMES = [
-    {"label": "work",     "root": Path.home() / ".claude-work"},
-    {"label": "personal", "root": Path.home() / ".claude-personal"},
-]
+def _detect_homes() -> list[dict]:
+    """Detect Claude Code config directories.
+
+    Priority:
+      1. CLAUDE_HOMES env var  — "label:~/path,label:~/path"
+      2. Auto-detect           — any ~/.claude* dir that has a projects/ subdir
+    """
+    env_val = os.environ.get("CLAUDE_HOMES", "").strip()
+    if env_val:
+        homes = []
+        for part in env_val.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if ":" in part:
+                label, path_str = part.split(":", 1)
+                homes.append({
+                    "label": label.strip(),
+                    "root": Path(path_str.strip()).expanduser().resolve(),
+                })
+            else:
+                p = Path(part).expanduser().resolve()
+                homes.append({"label": p.name, "root": p})
+        return homes
+
+    # Auto-detect: prioritized candidates + glob for anything else
+    home_dir = Path.home()
+    seen: set[Path] = set()
+    candidates: list[tuple[str, Path]] = [
+        ("work",     home_dir / ".claude-work"),
+        ("personal", home_dir / ".claude-personal"),
+        ("claude",   home_dir / ".claude"),
+    ]
+    try:
+        for d in sorted(home_dir.glob(".claude-*")):
+            if d.is_dir():
+                label = d.name.removeprefix(".claude-") or d.name
+                if not any(c[1] == d for c in candidates):
+                    candidates.append((label, d))
+    except Exception:
+        pass
+
+    result = []
+    for label, root in candidates:
+        if root in seen:
+            continue
+        if (root / "projects").exists():
+            seen.add(root)
+            result.append({"label": label, "root": root})
+    return result
+
+
+HOMES = _detect_homes()
 
 
 @dataclass
@@ -820,6 +868,34 @@ def fetch_oauth_usage() -> dict | None:
         return data
     except Exception:
         return None
+
+
+def homes_info() -> list[dict]:
+    """Return detected HOMES with project/session counts."""
+    result = []
+    home_dir = Path.home()
+    for home in HOMES:
+        root = home["root"]
+        proj_dir = root / "projects"
+        projects = 0
+        sessions = 0
+        if proj_dir.exists():
+            for p in proj_dir.iterdir():
+                if p.is_dir():
+                    projects += 1
+                    sessions += sum(1 for _ in p.glob("*.jsonl"))
+        try:
+            display = "~/" + root.relative_to(home_dir).as_posix()
+        except ValueError:
+            display = str(root)
+        result.append({
+            "label": home["label"],
+            "path": str(root),
+            "home_display": display,
+            "project_count": projects,
+            "session_count": sessions,
+        })
+    return result
 
 
 def rolling_5h_usage() -> dict:
