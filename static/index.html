@@ -269,12 +269,14 @@ const modelClass = (m) => {
 let currentFilter = "all";
 let lastSessions = [];
 
-// Plan tier limits (token estimates per 5h rolling window)
+// Plan tier limits — measured as output + cache_write tokens per 5h rolling window.
+// Anthropic excludes cache_read (no compute) and input from plan limits.
+// These limits are unofficial estimates; calibrate via Custom if needed.
 const PLAN_LIMITS = {
-  "pro":     { name: "Pro",      tokens: 7_000_000 },
-  "max5":    { name: "Max (5x)", tokens: 35_000_000 },
+  "pro":     { name: "Pro",       tokens: 7_000_000 },
+  "max5":    { name: "Max (5x)",  tokens: 35_000_000 },
   "max20":   { name: "Max (20x)", tokens: 140_000_000 },
-  "custom":  { name: "Custom",   tokens: null },
+  "custom":  { name: "Custom",    tokens: null },
 };
 
 function getPlan() {
@@ -289,7 +291,9 @@ function renderPlan(rolling) {
   const card = document.getElementById("plan-card");
   const { tier, limit } = getPlan();
   const total = rolling?.total || {};
-  const tokens = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
+  // Anthropic plan limits count output + cache_write only (cache_read excluded — no compute)
+  const tokens = (total.output||0) + (total.cache_create||0);
+  const tokensAll = (total.input||0)+(total.output||0)+(total.cache_create||0)+(total.cache_read||0);
   const pct = limit ? Math.min(100, Math.round(100 * tokens / limit)) : 0;
   const overPct = limit ? (100 * tokens / limit) : 0;
   const barCls = overPct >= 90 ? "warn" : overPct >= 100 ? "over" : "";
@@ -323,15 +327,16 @@ function renderPlan(rolling) {
     <div class="plan-row">
       <div style="min-width:90px;font-size:14px;font-weight:600;">${pct}%</div>
       <div class="plan-bar-wrap"><div class="plan-bar ${barCls}" style="width:${pct}%"></div></div>
-      <div style="min-width:140px;text-align:right;font-size:11px;color:var(--muted);">
+      <div style="min-width:160px;text-align:right;font-size:11px;color:var(--muted);">
         ${fmtK(tokens)} / ${limit ? fmtK(limit) : "—"}
+        <span style="font-size:10px;opacity:0.6"> (out+cw)</span>
       </div>
     </div>
     <div class="plan-meta">
       <span>📊 ${rolling?.msg_count||0} messages</span>
       <span>💵 ${fmtUsd(rolling?.cost_usd)}</span>
+      <span title="cache_read 제외 — Anthropic 한도 산정 방식">전체 ${fmtK(tokensAll)} <span style="opacity:.5">(cr 포함)</span></span>
       <span>⏱ ${resetText}</span>
-      <span style="color:${overPct>=90?"var(--warn)":"var(--muted)"}">${PLAN_LIMITS[tier]?.name || ""}${tier!=="custom" && limit ? "" : " (직접 설정)"}</span>
     </div>
   `;
   document.getElementById("plan-select").addEventListener("change", e => {
